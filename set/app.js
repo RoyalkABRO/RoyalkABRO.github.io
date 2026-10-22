@@ -1,12 +1,14 @@
 import {Repository} from './js/storage.js';
 import {fresh,normalize,clone,uid,getOrCreateExercise,validSet,startSession,finishSession,moveItem} from './js/model.js';
-import {renderView,templateForm,historyDetail,historyEditor,catalogList,esc,button,programPreview} from './js/views.js';
+import {renderView,renderNavigation,shareProgramForm,templateForm,historyDetail,historyEditor,catalogList,esc,button,programPreview} from './js/views.js';
+import {programText} from './js/share.js';
 import {addPersonalProgram} from './js/programs.js';
 import {remaining,formatClock,unlockSound,beep} from './js/timer.js';
 import {setupPWA,checkOffline,requestPersistence} from './js/pwa.js';
 
 const app=document.getElementById('app'),modal=document.getElementById('modal'),modalContent=document.getElementById('modalContent');
 const notice=document.getElementById('notice'),noticeText=document.getElementById('noticeText');
+const navigation=document.getElementById('navigation');
 const repo=new Repository();
 let state,queue=Promise.resolve(),pending=0,failed=false,stale=false,toastHandle,draft=null,historyDraft=null,modalMode='',timerNotified=null;
 const ui={tab:'home',historyDays:0,progressDays:0,metric:'weight',exerciseId:null,offlineStatus:'Перевіряємо офлайн-готовність…',storageStatus:'Сховище на пристрої'};
@@ -14,7 +16,16 @@ const channel=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('set-wo
 function toast(message){const el=document.getElementById('toast');el.textContent=message;el.classList.add('show');clearTimeout(toastHandle);toastHandle=setTimeout(()=>el.classList.remove('show'),3200);}
 function showError(error){noticeText.textContent=error?.message||String(error);notice.hidden=false;}
 function saveStatus(){const target=document.getElementById('saveStatus');if(target)target.textContent=stale?'Є зміни в іншому вікні':failed?'Є незбережені зміни':pending?'Збереження…':'Збережено на пристрої';}
-function render(){app.innerHTML=renderView(state,ui);saveStatus();updateTimer();}
+function render(){
+  app.innerHTML=renderView(state,ui);
+  if(!navigation.childElementCount)navigation.innerHTML=renderNavigation();
+  const current=ui.tab==='workout'?'home':ui.tab;
+  for(const tab of navigation.querySelectorAll('[data-tab]')){
+    const active=tab.dataset.tab===current;tab.classList.toggle('active',active);
+    if(active)tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');
+  }
+  navigation.hidden=false;saveStatus();updateTimer();
+}
 function commit(mutator,{redraw=true,preserve=false}={}) {
   pending++;saveStatus();
   const task=queue.then(async()=>{
@@ -41,6 +52,22 @@ async function importBackup(file){if(!file)return;try{if(file.size>30*1024*1024)
 function sessionExercise(s,id){const found=s.session?.exercises.find(e=>e.id===id);if(!found)throw new Error('Вправу не знайдено');return found;}
 function sessionSet(s,ex,id){const found=sessionExercise(s,ex).sets.find(x=>x.id===id);if(!found)throw new Error('Підхід не знайдено');return found;}
 function displayDraft(){openModal(templateForm(draft,state),'template');}
+async function copyProgramText(){
+  const preview=document.getElementById('share-text');
+  if(!preview?.value)return;
+  const status=document.getElementById('share-status');
+  try{await navigator.clipboard.writeText(preview.value);status.textContent='Текст скопійовано';}
+  catch{preview.focus();preview.select();status.textContent='Затисни виділений текст і вибери «Копіювати»';}
+}
+async function shareProgramText(){
+  const text=document.getElementById('share-text')?.value;if(!text)return;
+  document.getElementById('share-status').textContent='';
+  const data={title:'Моя програма тренувань — СЕТ',text};
+  if(typeof navigator.share==='function'){
+    try{await navigator.share(data);return;}catch(error){if(error.name==='AbortError')return;}
+  }
+  await copyProgramText();
+}
 async function handleAction(b){
   const action=b.dataset.action,id=b.dataset.id;unlockSound();
   if(action==='tab'){await queue;ui.tab=b.dataset.tab;render();window.scrollTo({top:0});return;}
@@ -61,6 +88,9 @@ async function handleAction(b){
   if(action==='rest-start'||action==='rest-adjust')return commit(s=>{if(!s.session)return;s.restEndsAt=action==='rest-adjust'?Math.max(Date.now(),s.restEndsAt||Date.now())+30000:Date.now()+s.restSeconds*1000;timerNotified=null;},{redraw:false}).then(updateTimer);
   if(action==='rest-stop')return commit(s=>{s.restEndsAt=null;timerNotified=null;},{redraw:false}).then(updateTimer);
   if(action==='export')return exportBackup();
+  if(action==='share-program'){await queue;openModal(shareProgramForm(state),'share-program');return;}
+  if(action==='share-text')return shareProgramText();
+  if(action==='copy-share-text')return copyProgramText();
   if(action==='export-legacy'){const text=await repo.recoveryText();if(!text)return toast('Даних попередньої версії немає');download(text,'set-before-v2.json');return;}
   if(action==='import')return document.getElementById('backup-file').click();
   if(action==='reset'){if(confirm('Очистити всі поточні плани та історію? Перед очищенням завантажиться резервна копія.')){await queue;backup(state,'set-before-reset');await commit(s=>{Object.assign(s,fresh());},{redraw:false});ui.tab='home';render();toast('Поточні дані очищено');}return;}
@@ -83,6 +113,7 @@ document.addEventListener('click',event=>{const b=event.target.closest('[data-ac
 app.addEventListener('input',event=>{const x=event.target;if(!x.matches('[data-set][data-field]'))return;const {ex,set,field}=x.dataset,value=x.value.replace(',','.');const row=x.closest('.set-grid'),btn=row.querySelector('.done');btn?.classList.remove('yes');btn?.setAttribute('aria-pressed','false');commit(s=>{const target=sessionSet(s,ex,set);target[field]=value;target.done=false;},{redraw:false,preserve:true}).catch(()=>{});});
 app.addEventListener('change',event=>{const x=event.target;if(x.id==='rest-duration')commit(s=>{s.restSeconds=Number(x.value);},{redraw:false}).then(()=>toast('Тривалість відпочинку збережено')).catch(()=>{});if(x.id==='progress-ex'){ui.exerciseId=x.value;render();}if(x.id==='progress-period'){ui.progressDays=Number(x.value);render();}if(x.id==='history-period'){ui.historyDays=Number(x.value);render();}if(x.id==='backup-file')importBackup(x.files[0]);});
 modal.addEventListener('cancel',event=>{event.preventDefault();closeModal();});
+modal.addEventListener('change',event=>{if(event.target.id==='share-plan'){document.getElementById('share-text').value=programText(state.templates,event.target.value);document.getElementById('share-status').textContent='';}});
 modal.addEventListener('click',event=>{if(event.target===modal){const r=modal.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)closeModal();}});
 modal.addEventListener('submit',event=>{event.preventDefault();const form=event.target;(async()=>{
   if(form.id==='template-form'){syncDraft();const saved=clone(draft);await commit(s=>{const exercises=saved.exercises.map(e=>({...e,exerciseId:e.exerciseId||getOrCreateExercise(s,e.name).id}));const t={id:saved.id,name:saved.name.trim(),day:saved.day,exercises};const index=s.templates.findIndex(x=>x.id===t.id);if(index<0)s.templates.push(t);else s.templates[index]=t;});closeModal(true);toast('План збережено');}
