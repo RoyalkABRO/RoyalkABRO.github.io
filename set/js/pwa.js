@@ -1,4 +1,4 @@
-export const CACHE_NAME='set-pwa-v2-20261023-2';
+export const CACHE_NAME='set-pwa-v2-20261023-3';
 export const OFFLINE_ASSETS=['./','./index.html','./styles.css','./app.js','./js/model.js','./js/storage.js','./js/stats.js','./js/timer.js','./js/views.js','./js/pwa.js','./js/programs.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 export async function checkOffline(){
   if(!('serviceWorker' in navigator)||!window.isSecureContext)return 'Потрібен HTTPS або localhost для офлайн-режиму';
@@ -21,5 +21,7 @@ export async function setupPWA({canUpdate,onStatus,onUpdate}){
   function waiting(){if(!registration.waiting)return;onUpdate(()=>{if(!canUpdate())return;if(requested||!registration.waiting){location.reload();return;}requested=true;registration.waiting.postMessage({type:'SKIP_WAITING'});});}
   waiting();
   registration.addEventListener('updatefound',()=>{const worker=registration.installing;worker?.addEventListener('statechange',()=>{if(worker.state==='installed'){if(navigator.serviceWorker.controller)waiting();else checkOffline().then(onStatus);}if(worker.state==='redundant')onStatus('Не вдалося підготувати оновлення. Поточна версія залишається доступною.');});});
+  // Force a fresh worker check on reopening; a cached app shell must not hide fixes.
+  if(navigator.onLine&&navigator.serviceWorker.controller)registration.update().catch(()=>{});
   await navigator.serviceWorker.ready;onStatus(await checkOffline());
 }
