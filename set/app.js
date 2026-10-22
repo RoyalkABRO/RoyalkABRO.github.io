@@ -1,6 +1,7 @@
 import {Repository} from './js/storage.js';
 import {fresh,normalize,clone,uid,getOrCreateExercise,validSet,startSession,finishSession,moveItem} from './js/model.js';
-import {renderView,templateForm,historyDetail,historyEditor,catalogList,esc,button} from './js/views.js';
+import {renderView,templateForm,historyDetail,historyEditor,catalogList,esc,button,programPreview} from './js/views.js';
+import {addPersonalProgram} from './js/programs.js';
 import {remaining,formatClock,unlockSound,beep} from './js/timer.js';
 import {setupPWA,checkOffline,requestPersistence} from './js/pwa.js';
 
@@ -29,7 +30,7 @@ function commit(mutator,{redraw=true,preserve=false}={}) {
   queue=task.catch(()=>{});return task;
 }
 function openModal(html,mode){modalContent.innerHTML=html;modalMode=mode;if(!modal.open)modal.showModal();}
-function syncDraft(){if(!draft)return;const name=document.getElementById('template-name');if(!name)return;draft.name=name.value;draft.day=Number(document.getElementById('template-day').value);draft.addName=document.getElementById('template-add-name').value;for(const root of modalContent.querySelectorAll('[data-draft-ex]')){const e=draft.exercises.find(x=>x.id===root.dataset.draftEx);if(e)for(const input of root.querySelectorAll('[data-target]'))e[input.dataset.target]=Number(input.value);}}
+function syncDraft(){if(!draft)return;const name=document.getElementById('template-name');if(!name)return;draft.name=name.value;draft.day=Number(document.getElementById('template-day').value);draft.addName=document.getElementById('template-add-name').value;for(const root of modalContent.querySelectorAll('[data-draft-ex]')){const e=draft.exercises.find(x=>x.id===root.dataset.draftEx);if(!e)continue;for(const input of root.querySelectorAll('[data-target]')){if(input.dataset.target==='targetReps'){e.targetRepsUnspecified=input.value==='';e.targetReps=input.value===''?8:Number(input.value);}else if(input.dataset.target==='targetRepsMax'){if(input.value==='')delete e.targetRepsMax;else e.targetRepsMax=Number(input.value);}else e[input.dataset.target]=Number(input.value);}}}
 function syncHistoryDraft(){if(!historyDraft)return;const title=document.getElementById('history-title');if(!title)return;historyDraft.title=title.value;const date=document.getElementById('history-date').value;if(date){const startedAt=new Date(date);if(!Number.isNaN(startedAt.getTime())){const duration=Date.parse(historyDraft.finishedAt)-Date.parse(historyDraft.startedAt);historyDraft.startedAt=startedAt.toISOString();historyDraft.finishedAt=new Date(startedAt.getTime()+duration).toISOString();}}for(const input of modalContent.querySelectorAll('[data-set][data-field]')){const set=historyDraft.exercises.find(e=>e.id===input.dataset.ex)?.sets.find(s=>s.id===input.dataset.set);if(set)set[input.dataset.field]=input.value.replace(',','.');}}
 function closeModal(force=false){if(!force&&['template','history-edit'].includes(modalMode)&&!confirm('Закрити редактор без збереження змін?'))return;modal.close();modalContent.innerHTML='';modalMode='';draft=null;historyDraft=null;}
 function editTemplate(id){const source=state.templates.find(t=>t.id===id);draft=source?{...clone(source),isNew:false,addName:''}:{id:uid(),name:'',day:new Date().getDay(),exercises:[],isNew:true,addName:''};openModal(templateForm(draft,state),'template');}
@@ -45,6 +46,8 @@ async function handleAction(b){
   if(action==='tab'){await queue;ui.tab=b.dataset.tab;render();window.scrollTo({top:0});return;}
   if(action==='resume'){ui.tab='workout';render();return;}
   if(action==='new-template')return editTemplate();
+  if(action==='preview-program'){await queue;openModal(programPreview(state),'program');return;}
+  if(action==='add-program'){let added=0;await commit(s=>{added=addPersonalProgram(s);});closeModal(true);toast(added?'Програму додано: по 4 підходи у кожній вправі':'Програму вже додано');return;}
   if(action==='edit-template')return editTemplate(id);
   if(action==='start'){await commit(s=>startSession(s,id),{redraw:false});ui.tab='workout';render();window.scrollTo({top:0});toast('Тренування розпочато');return;}
   if(action==='add-set')return commit(s=>{const e=sessionExercise(s,id);if(e.sets.length>=200)throw new Error('Максимум 200 підходів');const p=e.sets.at(-1);e.sets.push({id:uid(),weight:p?.weight??'',reps:p?.reps??'',done:false});});
@@ -62,7 +65,7 @@ async function handleAction(b){
   if(action==='import')return document.getElementById('backup-file').click();
   if(action==='reset'){if(confirm('Очистити всі поточні плани та історію? Перед очищенням завантажиться резервна копія.')){await queue;backup(state,'set-before-reset');await commit(s=>{Object.assign(s,fresh());},{redraw:false});ui.tab='home';render();toast('Поточні дані очищено');}return;}
   if(action==='close-modal')return closeModal();
-  if(action==='draft-add'){syncDraft();const name=draft.addName.trim();if(!name)return toast('Введи назву вправи');if(draft.exercises.length>=200)return toast('Максимум 200 вправ');draft.exercises.push({id:uid(),exerciseId:null,name,targetSets:3,targetReps:8});draft.addName='';displayDraft();return;}
+  if(action==='draft-add'){syncDraft();const name=draft.addName.trim();if(!name)return toast('Введи назву вправи');if(draft.exercises.length>=200)return toast('Максимум 200 вправ');draft.exercises.push({id:uid(),exerciseId:null,name,targetSets:4,targetReps:8});draft.addName='';displayDraft();return;}
   if(action==='draft-remove'){syncDraft();draft.exercises=draft.exercises.filter(e=>e.id!==id);displayDraft();return;}
   if(action==='draft-move'){syncDraft();moveItem(draft.exercises,id,Number(b.dataset.direction));displayDraft();return;}
   if(action==='delete-template'){if(confirm('Видалити план? Історія тренувань залишиться.')){await commit(s=>{s.templates=s.templates.filter(t=>t.id!==draft.id);});closeModal(true);}return;}

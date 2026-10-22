@@ -59,3 +59,14 @@ dialog{scroll-padding-bottom:20px;overscroll-behavior:contain}
 dialog form>.btn.block{margin-top:16px}
 @media(max-width:380px){.shell{padding:0 12px}.exercise{padding:12px}.editor-item{flex-wrap:wrap}.editor-item .controls{margin-left:auto}.hero{padding:20px}.rest{padding:10px}.rest .controls{gap:2px}.metric .val{font-size:20px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+.preset-card{border-color:#536b37;background:linear-gradient(130deg,#1c291d,#151a24)}
+.preset-card h2{font-size:21px;margin:12px 0 8px;letter-spacing:-.5px}
+.program-day{border-top:1px solid var(--stroke);padding:8px 0}
+.program-day h3{font-size:18px;color:var(--lime);margin:14px 0}
+.program-day ol{padding-left:22px;margin:0}
+.program-day li{padding:8px 0;font-size:14px;line-height:1.5}
+.program-day li span{display:block;overflow-wrap:anywhere}
+.program-day li strong{font-size:12px;color:var(--lime);font-variant-numeric:tabular-nums}
+.program-actions{position:sticky;bottom:-20px;background:#161d28;padding:14px 0 4px;margin-top:14px}
+.plan-target{font-size:12px;color:var(--lime);line-height:1.5;margin-top:6px}
+.target-grid{grid-template-columns:1fr 1fr 1fr;gap:8px}

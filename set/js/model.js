@@ -18,6 +18,15 @@ export function validSet(s, completed=false) {
   if (completed || s.done) return /^(?:\d+(?:\.\d*)?|\.\d+)$/.test(String(s.weight)) && Number.isFinite(Number(s.weight)) && Number(s.weight)>=0 && Number(s.weight)<=10000 && /^\d+$/.test(String(s.reps)) && Number.isInteger(Number(s.reps)) && Number(s.reps)>0 && Number(s.reps)<=1000;
   return ['string','number'].includes(typeof s.weight) && ['string','number'].includes(typeof s.reps) && String(s.weight).length<=24 && String(s.reps).length<=24;
 }
+export function repTarget(e){
+  if(e.targetRepsUnspecified)return 'повторення за фактом';
+  return e.targetRepsMax&&e.targetRepsMax!==e.targetReps?`${e.targetReps}–${e.targetRepsMax} повт.`:`${e.targetReps} повт.`;
+}
+function repOptions(e){
+  if(e.targetRepsUnspecified!==undefined&&typeof e.targetRepsUnspecified!=='boolean')fail('Некоректна ціль повторень');
+  if(e.targetRepsMax!==undefined&&(!Number.isInteger(e.targetRepsMax)||e.targetRepsMax<e.targetReps||e.targetRepsMax>1000||e.targetRepsUnspecified))fail('Некоректний діапазон повторень');
+  return {...(e.targetRepsMax!==undefined?{targetRepsMax:e.targetRepsMax}:{}),...(e.targetRepsUnspecified?{targetRepsUnspecified:true}:{})};
+}
 export function normalize(raw) {
   if (!object(raw) || ![1,2,undefined].includes(raw.version)) fail('Непідтримувана версія даних');
   if (!list(raw.templates,500) || !list(raw.history,100000)) fail('Пошкоджений список планів або історії');
@@ -38,7 +47,7 @@ export function normalize(raw) {
     out.templates.push({id:t.id,name:t.name.trim(),day:t.day,exercises:t.exercises.map(e=>{
       checkExercise(e); const targetSets=legacy?3:e.targetSets; const targetReps=legacy?8:e.targetReps;
       if (!Number.isInteger(targetSets)||targetSets<1||targetSets>20||!Number.isInteger(targetReps)||targetReps<1||targetReps>1000) fail('Некоректна ціль підходів');
-      return {id:e.id,exerciseId:exerciseId(e),name:e.name.trim(),targetSets,targetReps};
+      return {id:e.id,exerciseId:exerciseId(e),name:e.name.trim(),targetSets,targetReps,...(legacy?{}:repOptions(e))};
     })});
   }
   function workout(w, completed) {
@@ -47,7 +56,9 @@ export function normalize(raw) {
     const exercises=w.exercises.map(e=>{
       checkExercise(e);
       if (!list(e.sets,200)||!e.sets.every(s=>validSet(s,completed))||!unique(e.sets)||(completed&&!e.sets.length)) fail('Некоректні підходи');
-      return {id:e.id,exerciseId:exerciseId(e),name:e.name.trim(),sets:e.sets.map(s=>({id:s.id,weight:completed?Number(s.weight):s.weight,reps:completed?Number(s.reps):s.reps,done:completed?true:s.done}))};
+      const targets={};
+      if(e.targetReps!==undefined){if(!Number.isInteger(e.targetReps)||e.targetReps<1||e.targetReps>1000)fail('Некоректна ціль повторень');Object.assign(targets,{targetReps:e.targetReps},repOptions(e));}
+      return {id:e.id,exerciseId:exerciseId(e),name:e.name.trim(),...targets,sets:e.sets.map(s=>({id:s.id,weight:completed?Number(s.weight):s.weight,reps:completed?Number(s.reps):s.reps,done:completed?true:s.done}))};
     });
     if (completed&&!exercises.length) fail('Порожній запис історії');
     return {id:w.id,templateId:w.templateId,title:w.title.trim(),startedAt:w.startedAt,...(completed?{finishedAt:w.finishedAt}:{}),exercises};
@@ -78,7 +89,7 @@ export function startSession(state,templateId) {
   const t=state.templates.find(t=>t.id===templateId); if(!t) fail('План не знайдено');
   state.session={id:uid(),templateId:t.id,title:t.name,startedAt:new Date().toISOString(),exercises:t.exercises.map(e=>{
     const prior=previousSets(state,e.exerciseId);
-    return {id:uid(),exerciseId:e.exerciseId,name:e.name,sets:Array.from({length:e.targetSets},(_,i)=>({id:uid(),weight:prior[i]?.weight??prior.at(-1)?.weight??'',reps:prior[i]?.reps??e.targetReps,done:false}))};
+    return {id:uid(),exerciseId:e.exerciseId,name:e.name,targetReps:e.targetReps,...repOptions(e),sets:Array.from({length:e.targetSets},(_,i)=>({id:uid(),weight:prior[i]?.weight??prior.at(-1)?.weight??'',reps:prior[i]?.reps??(e.targetRepsUnspecified?'':e.targetReps),done:false}))};
   })};state.restEndsAt=null;
 }
 export function finishSession(state) {
