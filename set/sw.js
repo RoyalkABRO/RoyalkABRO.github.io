@@ -1,5 +1,5 @@
 /* Keep CACHE and ASSETS aligned with js/pwa.js. Each release gets a new cache. */
-const CACHE='set-pwa-v2-20261023-5';
+const CACHE='set-pwa-v2-20261023-6';
 const PREFIX='set-pwa-';
 const ASSETS=['./','./index.html','./styles.css','./app.js','./js/model.js','./js/storage.js','./js/stats.js','./js/timer.js','./js/views.js','./js/pwa.js','./js/programs.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
@@ -14,7 +14,7 @@ self.addEventListener('install',event=>event.waitUntil((async()=>{
   await Promise.all(assets.map(([url,response])=>cache.put(url,response)));
   // Old releases placed their update button under the iPhone status bar.
   // Activate the prepared files without that button only when storage confirms
-  // there is no active workout. Existing pages stay open and are never navigated.
+  // there is no active workout.
   if(self.registration?.active&&await canActivateWithoutButton())await self.skipWaiting();
 })()));
 function canActivateWithoutButton(){
@@ -41,8 +41,25 @@ function canActivateWithoutButton(){
     };
   });
 }
-self.addEventListener('message',event=>{if(event.data?.type==='SKIP_WAITING')self.skipWaiting();});
-self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith(PREFIX)&&key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
+self.addEventListener('message',event=>{
+  if(event.data?.type==='SKIP_WAITING')self.skipWaiting();
+  if(event.data?.type==='GET_VERSION')event.ports?.[0]?.postMessage({version:CACHE});
+});
+self.addEventListener('activate',event=>event.waitUntil((async()=>{
+  const old=(await caches.keys()).filter(key=>key.startsWith(PREFIX)&&key!==CACHE);
+  await Promise.all(old.map(key=>caches.delete(key)));
+  await self.clients.claim();
+  // Older pages ignore controllerchange until their inaccessible button is tapped.
+  // Reload those pages after a safe upgrade, never an unfinished saved workout.
+  if(!old.length||!await canActivateWithoutButton())return;
+  const scope=new URL(self.registration.scope);
+  for(const client of await self.clients.matchAll({type:'window'})){
+    const url=new URL(client.url);
+    if(url.origin!==scope.origin||!url.pathname.startsWith(scope.pathname)||typeof client.navigate!=='function')continue;
+    // Do not hold activation open waiting for a navigation that needs this worker.
+    client.navigate(client.url).catch(()=>{});
+  }
+})()));
 self.addEventListener('fetch',event=>{
   const url=new URL(event.request.url);
   if(event.request.method!=='GET'||url.origin!==self.location.origin)return;

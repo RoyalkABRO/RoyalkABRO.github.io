@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0d13">
+  <title>Оновити СЕТ</title>
+  <style>
+    :root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0a0d13;color:#f5f7fb}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;min-height:100svh;display:grid;place-items:center;padding:max(76px,env(safe-area-inset-top)) max(24px,env(safe-area-inset-right)) max(40px,env(safe-area-inset-bottom)) max(24px,env(safe-area-inset-left))}
+    main{width:100%;max-width:420px}small{color:#cbfa64;font-weight:750;letter-spacing:.16em}h1{font-size:34px;line-height:1.12;margin:20px 0}p{font-size:17px;line-height:1.55;color:#aeb8c9}button{display:block;width:100%;min-height:60px;margin:28px 0 16px;border:0;border-radius:16px;padding:18px 20px;background:#cbfa64;color:#10170a;font-family:inherit;font-size:18px;line-height:1.3;font-weight:750;touch-action:manipulation;cursor:pointer}button:disabled{opacity:.65;cursor:wait}button:focus-visible,a:focus-visible{outline:3px solid white;outline-offset:5px}#status{min-height:52px;font-size:15px}a{color:#cbfa64;display:inline-block;padding:14px 0;font-size:16px}.note{font-size:14px;color:#8692a6}
+  </style>
+</head>
+<body>
+  <main>
+    <small>СЕТ / ОНОВЛЕННЯ</small>
+    <h1>Оновимо застосунок</h1>
+    <p>Завантажимо свіжу версію та відкриємо СЕТ. Збережені тренування й програми залишаться на телефоні.</p>
+    <button id="update" type="button">Оновити й відкрити СЕТ</button>
+    <p id="status" role="status" aria-live="polite">Потрібне підключення до інтернету.</p>
+    <a href="/set/">Повернутися до СЕТ</a>
+    <p class="note">Ця сторінка оновлює СЕТ у поточному браузері. Застосунок з іконки на iPhone може мати окремі дані.</p>
+    <noscript><p>Увімкни JavaScript, щоб установити оновлення.</p></noscript>
+  </main>
+  <script type="module">
+    const RELEASE='set-pwa-v2-20261023-6';
+    const appURL=new URL('/set/',location.origin);
+    const button=document.getElementById('update'),status=document.getElementById('status');
+    function activate(worker){
+      return new Promise((resolve,reject)=>{
+        if(!worker){reject(new Error('Не вдалося знайти оновлення. Спробуй ще раз.'));return;}
+        const timeout=setTimeout(()=>finish(new Error('Завантаження триває довше, ніж очікувалося. Перевір інтернет і спробуй ще раз.')),45000);
+        function finish(error){clearTimeout(timeout);worker.removeEventListener('statechange',check);error?reject(error):resolve();}
+        function check(){
+          if(worker.state==='activated')finish();
+          else if(worker.state==='redundant')finish(new Error('Не вдалося завантажити всі файли. Перевір інтернет і спробуй ще раз.'));
+          else if(worker.state==='installed')worker.postMessage({type:'SKIP_WAITING'});
+        }
+        worker.addEventListener('statechange',check);check();
+      });
+    }
+    function version(worker){
+      return new Promise((resolve,reject)=>{
+        const channel=new MessageChannel();
+        const timeout=setTimeout(()=>{channel.port1.close();reject(new Error('Браузер ще використовує попередню версію. Спробуй оновити ще раз.'));},5000);
+        channel.port1.onmessage=event=>{clearTimeout(timeout);channel.port1.close();resolve(event.data?.version);};
+        worker.postMessage({type:'GET_VERSION'},[channel.port2]);
+      });
+    }
+    button.addEventListener('click',async()=>{
+      button.disabled=true;status.textContent='Завантажуємо свіжу версію…';
+      try{
+        if(!navigator.onLine)throw new Error('Підключи інтернет і спробуй ще раз.');
+        if(!('serviceWorker' in navigator))throw new Error('Відкрий це посилання у Safari, щоб установити оновлення.');
+        const workerURL=new URL(`sw.js?set_release=${RELEASE}`,appURL);
+        const registration=await navigator.serviceWorker.register(workerURL.href,{scope:appURL.pathname,updateViaCache:'none'});
+        const worker=registration.installing||registration.waiting||registration.active;
+        await activate(worker);
+        if(await version(worker)!==RELEASE)throw new Error('Свіжа версія ще не готова. Спробуй ще раз за хвилину.');
+        status.textContent='Готово. Відкриваємо СЕТ…';
+        appURL.searchParams.set('updated',RELEASE);location.replace(appURL.href);
+      }catch(error){status.textContent=error.message||'Не вдалося оновити. Спробуй ще раз.';button.disabled=false;button.textContent='Спробувати ще раз';}
+    });
+  </script>
+</body>
+</html>
