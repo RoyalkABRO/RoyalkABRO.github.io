@@ -1,9 +1,10 @@
 /* Keep CACHE and ASSETS aligned with js/pwa.js. Each release gets a new cache. */
-const CACHE='set-pwa-v2-20261023-3';
+const CACHE='set-pwa-v2-20261023-4';
 const PREFIX='set-pwa-';
 const ASSETS=['./','./index.html','./styles.css','./app.js','./js/model.js','./js/storage.js','./js/stats.js','./js/timer.js','./js/views.js','./js/pwa.js','./js/programs.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
-  await(await caches.open(CACHE)).addAll(ASSETS);
+  const requests=ASSETS.map(path=>new Request(new URL(path,self.registration.scope),{cache:'reload'}));
+  await(await caches.open(CACHE)).addAll(requests);
   // Old releases placed their update button under the iPhone status bar.
   // Activate the prepared files without that button only when storage confirms
   // there is no active workout. Existing pages stay open and are never navigated.
