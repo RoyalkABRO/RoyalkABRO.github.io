@@ -1,10 +1,17 @@
 /* Keep CACHE and ASSETS aligned with js/pwa.js. Each release gets a new cache. */
-const CACHE='set-pwa-v2-20261023-4';
+const CACHE='set-pwa-v2-20261023-5';
 const PREFIX='set-pwa-';
 const ASSETS=['./','./index.html','./styles.css','./app.js','./js/model.js','./js/storage.js','./js/stats.js','./js/timer.js','./js/views.js','./js/pwa.js','./js/programs.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
-  const requests=ASSETS.map(path=>new Request(new URL(path,self.registration.scope),{cache:'reload'}));
-  await(await caches.open(CACHE)).addAll(requests);
+  const cache=await caches.open(CACHE);
+  const assets=await Promise.all(ASSETS.map(async path=>{
+    const canonical=new URL(path,self.registration.scope),fresh=new URL(canonical);
+    fresh.searchParams.set('set_release',CACHE);
+    const response=await fetch(new Request(fresh,{cache:'reload'}));
+    if(!response.ok)throw new Error(`Unable to cache ${path}`);
+    return [canonical.href,response];
+  }));
+  await Promise.all(assets.map(([url,response])=>cache.put(url,response)));
   // Old releases placed their update button under the iPhone status bar.
   // Activate the prepared files without that button only when storage confirms
   // there is no active workout. Existing pages stay open and are never navigated.
