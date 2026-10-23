@@ -1,10 +1,11 @@
-export const volume = w => w.exercises.reduce((sum,e)=>sum+e.sets.reduce((v,s)=>v+Number(s.weight)*Number(s.reps),0),0);
+import {isWorking} from './progression.js';
+export const volume = w => w.exercises.reduce((sum,e)=>sum+e.sets.filter(isWorking).reduce((v,s)=>v+Number(s.weight)*Number(s.reps),0),0);
 export function filteredHistory(history,days=0,now=Date.now()) {
   return history.filter(w=>!days||Date.parse(w.finishedAt)>=now-days*86400000).sort((a,b)=>Date.parse(a.finishedAt)-Date.parse(b.finishedAt));
 }
 export function series(history,exerciseId,metric='weight') {
   return [...history].sort((a,b)=>Date.parse(a.finishedAt)-Date.parse(b.finishedAt)).flatMap(w=>{
-    const sets=w.exercises.filter(e=>e.exerciseId===exerciseId).flatMap(e=>e.sets);
+    const sets=w.exercises.filter(e=>e.exerciseId===exerciseId).flatMap(e=>e.sets).filter(isWorking);
     if(!sets.length)return [];
     if(metric==='e1rm'&&!sets.some(s=>estimated1RM(s)>0))return [];
     const value=metric==='volume'?sets.reduce((v,s)=>v+s.weight*s.reps,0):metric==='reps'?Math.max(...sets.map(s=>s.reps)):metric==='e1rm'?Math.max(...sets.map(estimated1RM)):Math.max(...sets.map(s=>s.weight));
@@ -12,15 +13,15 @@ export function series(history,exerciseId,metric='weight') {
   });
 }
 export function records(history,exerciseId) {
-  const sets=history.flatMap(w=>w.exercises.filter(e=>e.exerciseId===exerciseId).flatMap(e=>e.sets));
+  const sets=history.flatMap(w=>w.exercises.filter(e=>e.exerciseId===exerciseId).flatMap(e=>e.sets)).filter(isWorking);
   return {weight:sets.length?Math.max(...sets.map(s=>s.weight)):0,reps:sets.length?Math.max(...sets.map(s=>s.reps)):0,bestSetVolume:sets.length?Math.max(...sets.map(s=>s.weight*s.reps)):0};
 }
 
 // Epley estimate: limit to 1–12 reps and external load; 0 kg bodyweight is not a strength estimate.
-export function estimated1RM(s){const w=Number(s.weight),r=Number(s.reps);return Number.isFinite(w)&&w>0&&Number.isInteger(r)&&r>=1&&r<=12?(r===1?w:w*(1+r/30)):0;}
+export function estimated1RM(s){const w=Number(s.weight),r=Number(s.reps);return isWorking(s)&&Number.isFinite(w)&&w>0&&Number.isInteger(r)&&r>=1&&r<=12?(r===1?w:w*(1+r/30)):0;}
 export function setRecords(history,exerciseId,set,earlier=[]){
-  if(!set.done)return [];
-  const previous=[...history.flatMap(w=>w.exercises.filter(e=>e.exerciseId===exerciseId).flatMap(e=>e.sets)),...earlier.filter(s=>s.done)];
+  if(!set.done||!isWorking(set))return [];
+  const previous=[...history.flatMap(w=>w.exercises.filter(e=>e.exerciseId===exerciseId).flatMap(e=>e.sets)),...earlier.filter(s=>s.done)].filter(isWorking);
   if(!previous.length)return [];
   const labels=[];
   if(Number(set.weight)>Math.max(...previous.map(s=>Number(s.weight))))labels.push('Вага');
