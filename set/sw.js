@@ -1,7 +1,7 @@
 /* Keep CACHE and ASSETS aligned with js/pwa.js. Each release gets a new cache. */
-const CACHE='set-pwa-v2-20261023-9';
+const CACHE='set-pwa-v2-20261023-10';
 const PREFIX='set-pwa-';
-const ASSETS=['./','./index.html','./styles.css','./app.js','./js/model.js','./js/storage.js','./js/stats.js','./js/timer.js','./js/views.js','./js/pwa.js','./js/programs.js','./js/share.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
+const ASSETS=['./','./index.html','./styles.css','./app.js','./js/model.js','./js/storage.js','./js/stats.js','./js/timer.js','./js/views.js','./js/pwa.js','./js/programs.js','./js/share.js','./js/icons.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
   const cache=await caches.open(CACHE);
   const assets=await Promise.all(ASSETS.map(async path=>{

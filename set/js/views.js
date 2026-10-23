@@ -3,22 +3,23 @@ import {PERSONAL_PROGRAM,missingProgramDays,onlyStarterPlans} from './programs.j
 import {volume,filteredHistory,series,records} from './stats.js';
 import {formatClock} from './timer.js';
 import {programText} from './share.js';
+import {icon} from './icons.js';
 export const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const fmtDate = iso => new Date(iso).toLocaleDateString('uk-UA',{day:'numeric',month:'long',year:'numeric'});
 const shortDate = iso => new Date(iso).toLocaleDateString('uk-UA',{day:'2-digit',month:'2-digit'});
 const plural = (n,[one,few,many]) => n%10===1&&n%100!==11?one:n%10>=2&&n%10<=4&&(n%100<12||n%100>14)?few:many;
 const formatNumber=n=>Number(n).toLocaleString('uk-UA',{maximumFractionDigits:2});
-export const button=(action,label,extra='',className='icon-btn')=>`<button type="button" class="${className}" data-action="${action}" ${extra}>${label}</button>`;
+const SYMBOL_ICONS=new Map([['✎','edit'],['▶','play'],['×','close'],['−','minus'],['✓','check'],['↑','arrow-up'],['↓','arrow-down']]);
+const ACTION_ICONS=new Map([['share-program','share'],['share-text','share'],['copy-share-text','copy'],['export','download'],['import','upload'],['new-template','plus'],['add-set','plus'],['session-add-ex','plus'],['draft-add','plus'],['history-add-set','plus'],['finish-workout','check'],['delete-template','trash'],['delete-history','trash'],['reset','trash']]);
+export const button=(action,label,extra='',className='icon-btn')=>{
+  const symbol=action==='rest-stop'?'stop':SYMBOL_ICONS.get(label),leading=ACTION_ICONS.get(action);
+  const content=symbol?icon(symbol):leading?icon(leading)+'<span>'+String(label).replace(/^[+↑↓]\s+|\s+✓$/g,'')+'</span>':label;
+  return `<button type="button" class="${className}" data-action="${action}" ${extra}>${content}</button>`;
+};
 function programCard(state){return missingProgramDays(state).length?`<section class="card preset-card"><div class="eyebrow">Пн · Ср · Пт</div><h2>Твоя програма — 4 підходи</h2><p class="subtle">Три тренування по 8 вправ. Додай всі вправи та діапазони повторень одразу.</p>${button('preview-program','Додати мою програму','','btn block')}</section>`:'';}
 export function programPreview(state){const missing=missingProgramDays(state);return `${button('close-modal','×','aria-label="Закрити"','modal-close')}<h2>Програма на 3 дні</h2><p class="subtle">По 4 підходи в кожній вправі. Повторення — за твоїми скринами.</p>${PERSONAL_PROGRAM.map(day=>`<section class="program-day"><h3>${esc(day.name)}${missing.some(x=>x.id===day.id)?'':' · уже додано'}</h3><ol>${day.exercises.map(([name,min,max])=>`<li><span>${esc(name)}</span><strong>${min===null?'4 підходи':`4 × ${min}–${max}`}</strong></li>`).join('')}</ol></section>`).join('')}<p class="helper">Для преса повторення не вказані: заповниш їх під час тренування.</p><p class="helper">${onlyStarterPlans(state)?'Програма замінить три порожні початкові плани.':'Наявні плани, історія та активне тренування збережуться.'}</p><div class="program-actions">${button('add-program',missing.length?`Додати ${missing.length} тренування`:'Програму вже додано',missing.length?'':'disabled','btn block')}</div>`;}
 function targetFields(e){return `<div class="target-grid"><label>Підходи<input class="field" data-target="targetSets" type="number" min="1" max="20" step="1" required value="${e.targetSets}"></label><label>Повторення від<input class="field" data-target="targetReps" type="number" min="1" max="1000" step="1" placeholder="—" value="${e.targetRepsUnspecified?'':e.targetReps}"></label><label>до<input class="field" data-target="targetRepsMax" type="number" min="1" max="1000" step="1" placeholder="—" value="${e.targetRepsMax??''}"></label></div>`;}
-const svgIcon=d=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
-const NAV_ICONS={
-  home:svgIcon('<path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/>'),
-  history:svgIcon('<rect x="3.5" y="4.5" width="17" height="16" rx="3"/><path d="M3.5 9.5h17M8 2.5v4M16 2.5v4"/>'),
-  progress:svgIcon('<path d="M3.5 17.5 9 12l4 4 7.5-7.5"/><path d="M15 8.5h5.5V14"/>'),
-  settings:svgIcon('<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>')
-};
+const NAV_ICONS={home:icon('dumbbell'),history:icon('calendar'),progress:icon('chart-line'),settings:icon('settings')};
 export function renderNavigation(){return [['home',NAV_ICONS.home,'Тренування'],['history',NAV_ICONS.history,'Історія'],['progress',NAV_ICONS.progress,'Прогрес'],['settings',NAV_ICONS.settings,'Налашт.']].map(([id,icon,label])=>`<button type="button" class="nav-btn" data-action="tab" data-tab="${id}"><span class="nav-icon" aria-hidden="true">${icon}</span><span>${label}</span></button>`).join('');}
 function shell(state,ui,body){return `<div class="shell"><header class="topbar"><div class="brand">СЕ<span>Т</span><span class="brand-caption">GYM LOG</span></div><div class="top-pill" id="connectionStatus">${navigator.onLine?'НА ПРИСТРОЇ':'БЕЗ ІНТЕРНЕТУ'}</div></header>${body}<div class="footer-space"></div></div>`;}
 export function shareProgramForm(state){return `${button('close-modal','×','aria-label="Закрити"','modal-close')}<h2>Поділитися тренуваннями</h2><p class="subtle">Обери тренування або всю програму. Вправи, підходи й повторення будуть звичайним текстом.</p><div class="labels"><label for="share-plan">Що надіслати</label><select id="share-plan" class="field"><option value="">Уся програма</option>${state.templates.map(plan=>`<option value="${esc(plan.id)}">${esc(plan.name)}</option>`).join('')}</select></div><div class="labels"><label for="share-text">Текст повідомлення</label><textarea id="share-text" class="field share-preview" readonly spellcheck="false">${esc(programText(state.templates))}</textarea></div><div class="btn-row">${button('share-text','Поділитися текстом','','btn')}${button('copy-share-text','Копіювати','','btn alt')}</div><p id="share-status" class="helper" role="status" aria-live="polite"></p>`;}

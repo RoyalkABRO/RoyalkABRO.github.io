@@ -42,6 +42,7 @@ button{cursor:pointer}
 button,a,input,select{touch-action:manipulation}
 button:disabled{opacity:.35;cursor:not-allowed}
 svg{display:block}
+.ui-icon{display:block;width:20px;height:20px;flex-shrink:0}
 [hidden]{display:none!important}
 button:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid var(--lime);outline-offset:3px}
 ::selection{background:var(--lime);color:var(--on-lime)}
@@ -125,7 +126,7 @@ button:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid var
 .icon-btn{display:grid;place-items:center;width:var(--tap);height:var(--tap);min-width:var(--tap);min-height:var(--tap);flex-shrink:0;border-radius:12px;background:transparent;border:1px solid var(--line);color:var(--muted);font-size:16px;line-height:1;transition:background .15s,color .15s,border-color .15s}
 .icon-btn:hover:not(:disabled){background:var(--surface2);color:var(--text)}
 .icon-btn:active:not(:disabled){transform:scale(.94)}
-.play-btn{display:grid;place-items:center;width:48px;height:48px;min-width:48px;flex-shrink:0;border:0;border-radius:50%;background:var(--lime);color:var(--on-lime);font-size:15px;padding-left:3px;box-shadow:0 6px 20px -6px rgba(200,245,66,.5);transition:transform .15s var(--ease)}
+.play-btn{display:grid;place-items:center;width:48px;height:48px;min-width:48px;flex-shrink:0;border:0;border-radius:50%;background:var(--lime);color:var(--on-lime);font-size:15px;padding:0;box-shadow:0 6px 20px -6px rgba(200,245,66,.5);transition:transform .15s var(--ease)}
 .play-btn:active:not(:disabled){transform:scale(.92)}
 .play-btn:disabled{box-shadow:none}
 .back{border:0;background:none;color:var(--muted);font-size:14px;font-weight:600;padding:5px 0}
@@ -189,7 +190,7 @@ select.field{appearance:none;-webkit-appearance:none;padding-right:38px;backgrou
 .done:active{transform:scale(.9)}
 .done.yes{background:var(--lime);border-color:var(--lime);color:var(--on-lime)}
 .set-grid:has(.done.yes) .set-input{color:var(--muted)}
-.add-set{flex:1;height:var(--tap);margin:0;background:transparent;color:var(--muted);border:1px dashed var(--line2);border-radius:12px;font-weight:500;font-size:13px;transition:color .15s,border-color .15s}
+.add-set{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:1;height:var(--tap);margin:0;background:transparent;color:var(--muted);border:1px dashed var(--line2);border-radius:12px;font-weight:500;font-size:13px;transition:color .15s,border-color .15s}
 .add-set:hover{color:var(--text);border-color:var(--muted2)}
 .exercise>.row{margin-top:10px;gap:8px}
 
