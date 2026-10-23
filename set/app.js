@@ -1,3 +1,4 @@
+import {PushNotifications} from './js/push-notifications.js';
 import {muscleField} from './js/muscles.js';
 import {exerciseOrderForm,bindExerciseOrder,reorderExercises} from './js/exercise-order.js';
 import {compactTiming} from './js/simple-views.js';
@@ -22,6 +23,9 @@ const navigation=document.getElementById('navigation');
 const repo=new Repository();
 let state,queue=Promise.resolve(),pending=0,failed=false,stale=false,toastHandle,draft=null,historyDraft=null,modalMode='',timerNotified=null,resultFile=null,resultURL=null;
 const ui={tab:'home',historyDays:0,progressDays:0,metric:'weight',exerciseId:null,offlineStatus:'Перевіряємо офлайн-готовність…',storageStatus:'Сховище на пристрої'};
+function updatePushStatus(info){Object.assign(ui,{pushStatus:info.message,pushConnected:info.connected,pushReady:info.ready,pushURL:info.url});for(const id of ['notificationStatus','restNotificationStatus']){const el=document.getElementById(id);if(el){el.textContent=info.message;if(id==='restNotificationStatus')el.hidden=!info.connected;}}for(const [id,hidden] of [['pushEnable',info.connected||!info.ready],['pushTest',!info.connected],['pushDisable',!info.connected],['pushPairing',info.connected],['pushRetry',info.ready]]){const el=document.getElementById(id);if(el)el.hidden=hidden;}}
+const pushNotifications=new PushNotifications({onStatus:updatePushStatus});
+function syncPush(){if(state&&!failed&&!stale)void pushNotifications.sync(state);}
 let undoRecord=null,undoHandle,orderCleanup=null;
 function clearUndo(){undoRecord=null;clearTimeout(undoHandle);document.getElementById('undoBar').hidden=true;}
 function offerUndo(before,label,tab,focusId){clearUndo();undoRecord={state:before,revision:repo.revision,expires:Date.now()+20000,tab,focusId};document.getElementById('undoLabel').textContent=label;document.getElementById('undoBar').hidden=false;undoHandle=setTimeout(clearUndo,20000);}
@@ -50,6 +54,7 @@ function updateWorkoutProgress(){
 function render(){
   if(state?.session&&state.focusWorkout)ui.focusId=focusExercise(state.session,ui.focusId)?.id;
   app.innerHTML=renderView(state,ui);
+  if(ui.tab==='workout'&&state?.session){const line=document.createElement('p');line.id='restNotificationStatus';line.className='helper';line.hidden=!ui.pushConnected;line.textContent=ui.pushStatus||'';app.querySelector('.simple-workout')?.append(line);}
   if(!navigation.childElementCount)navigation.innerHTML=renderNavigation();
   const current=ui.tab==='workout'?'home':ui.tab;
   for(const tab of navigation.querySelectorAll('[data-tab]')){
@@ -65,7 +70,7 @@ function commit(mutator,{redraw=true,preserve=false,undoLabel=null}={}) {
     const before=undoLabel?clone(state):null,undoTab=ui.tab,undoFocus=ui.focusId;
     const next=clone(state);mutator(next);
     try {
-      const saved=await repo.write(next);state=saved;failed=false;
+      const saved=await repo.write(next);state=saved;failed=false;syncPush();
       clearUndo();if(undoLabel)offerUndo(before,undoLabel,undoTab,undoFocus);
       if(!stale)notice.hidden=true;
       channel?.postMessage({revision:repo.revision});
@@ -111,6 +116,13 @@ async function showResultCard(id){
 function openExerciseConfig(id){const e=state.catalog.find(e=>e.id===id);if(!e)return;openModal(button('close-modal','×','aria-label="Закрити"','modal-close')+'<h2>Налаштування вправи</h2><form id="rename-form" data-id="'+esc(id)+'"><label class="filter-label">Назва<input id="exercise-new-name" class="field" maxlength="90" required value="'+esc(e.name)+'"></label><label class="filter-label">Крок ваги, кг<input id="exercise-weight-step" class="field" type="number" inputmode="decimal" min="0.001" max="1000" step="any" placeholder="Наприклад, 2.5" value="'+esc(e.weightStep??'')+'"></label><label class="filter-label">Як записуєш вагу<select id="exercise-weight-basis" class="field"><option value="total" '+(e.weightBasis!=='one-dumbbell'?'selected':'')+'>Загальна вага</option><option value="one-dumbbell" '+(e.weightBasis==='one-dumbbell'?'selected':'')+'>Вага однієї гантелі</option></select></label>'+equipmentFields(e)+muscleField(e)+'<p class="helper">Крок — наступна доступна різниця ваги. Для гантелей обсяг рахується за записаною вагою однієї гантелі, без подвоєння.</p><button type="submit" class="btn block">Зберегти</button></form>','rename');}
 async function handleAction(b){
   const action=b.dataset.action,id=b.dataset.id;unlockSound();
+  if(action.startsWith('push-')){if(b.dataset.busy)return;b.dataset.busy='1';b.disabled=true;try{
+    if(action==='push-enable'){const code=document.getElementById('pushPairingCode')?.value||'';await pushNotifications.enable(code);const field=document.getElementById('pushPairingCode');if(field)field.value='';await queue;syncPush();}
+    if(action==='push-connect'){await pushNotifications.init();syncPush();}
+    if(action==='push-test')await pushNotifications.test();
+    if(action==='push-disable')await pushNotifications.disable();
+  }catch(e){pushNotifications.status(e.message);toast(e.message);}finally{b.disabled=false;delete b.dataset.busy;}return;}
+
   if(action==='tab'){await queue;if(window.scrollY)window.scrollTo(0,0);ui.tab=b.dataset.tab;render();if(window.scrollY)window.scrollTo(0,0);return;}
   if(action==='resume'){if(window.scrollY)window.scrollTo(0,0);ui.tab='workout';render();return;}
   if(action==='calendar-month'){const base=ui.calendarMonth?new Date(ui.calendarMonth+'-01T12:00:00'):new Date();const month=new Date(base.getFullYear(),base.getMonth()+Number(b.dataset.direction),1);ui.calendarMonth=month.getFullYear()+'-'+String(month.getMonth()+1).padStart(2,'0');render();return;}
@@ -203,10 +215,10 @@ modal.addEventListener('submit',event=>{event.preventDefault();const form=event.
 })().catch(showError);});
 function updatePlates(){const result=document.getElementById('plateResult'),bar=document.getElementById('plateBar');if(!result||!bar)return;const weight=result.dataset.weight===''?NaN:Number(result.dataset.weight),p=barbellPlates(weight,Number(bar.value));result.textContent=!p?'Вкажи вагу підходу не меншу за вагу грифа.':p.plates.length?p.plates.map(n=>n.toLocaleString('uk-UA')).join(' + ')+' кг на бік'+(p.remainder?' · залишок '+p.remainder.toLocaleString('uk-UA')+' кг загалом':''):'Без дисків'+(p.remainder?' · залишок '+p.remainder.toLocaleString('uk-UA')+' кг загалом':'');}
 modal.addEventListener('input',event=>{if(event.target.id==='plateBar')updatePlates();});
-function updateTimer(){if(!state)return;const timing=document.getElementById("compactTiming");if(timing)timing.textContent=compactTiming(state);const compact=document.getElementById("restCompact");if(compact)compact.hidden=!state.restEndsAt;const hud=document.getElementById('restHudTimer');if(hud){const seconds=remaining(state.restEndsAt,0);hud.textContent=formatClock(seconds);document.getElementById('restHudTotal').textContent=state.restEndsAt?'Ціль: '+(state.restDuration||state.restSeconds)+' с':'Таймер не запущено';document.getElementById('restRing').style.strokeDashoffset=String(100-Math.min(1,seconds/(state.restDuration||state.restSeconds))*100);}document.title=state.restEndsAt>Date.now()?'('+formatClock(remaining(state.restEndsAt,state.restSeconds))+') СЕТ':'СЕТ';const target=document.getElementById('restTimer');if(target)target.textContent=formatClock(remaining(state.restEndsAt,state.restSeconds));const label=document.getElementById('restLabel');if(label)label.textContent=state.restEndsAt&&remaining(state.restEndsAt,state.restSeconds)===0?'Відпочинок завершено':(state.restKind==='exercise'?'Між вправами':state.restKind==='warmup'?'Після розминки':'Відпочинок');if(state.restEndsAt&&state.restEndsAt<=Date.now()&&timerNotified!==state.restEndsAt&&!document.hidden){timerNotified=state.restEndsAt;beep();toast('Час наступного підходу!');}}
+function updateTimer(){if(!state)return;const timing=document.getElementById("compactTiming");if(timing)timing.textContent=compactTiming(state);const compact=document.getElementById("restCompact");if(compact)compact.hidden=!state.restEndsAt;const hud=document.getElementById('restHudTimer');if(hud){const seconds=remaining(state.restEndsAt,0);hud.textContent=formatClock(seconds);document.getElementById('restHudTotal').textContent=state.restEndsAt?'Ціль: '+(state.restDuration||state.restSeconds)+' с':'Таймер не запущено';document.getElementById('restRing').style.strokeDashoffset=String(100-Math.min(1,seconds/(state.restDuration||state.restSeconds))*100);}document.title=state.restEndsAt>Date.now()?'('+formatClock(remaining(state.restEndsAt,state.restSeconds))+') СЕТ':'СЕТ';const target=document.getElementById('restTimer');if(target)target.textContent=formatClock(remaining(state.restEndsAt,state.restSeconds));const label=document.getElementById('restLabel');if(label)label.textContent=state.restEndsAt&&remaining(state.restEndsAt,state.restSeconds)===0?'Відпочинок завершено':(state.restKind==='exercise'?'Між вправами':state.restKind==='warmup'?'Після розминки':'Відпочинок');if(state.restEndsAt&&state.restEndsAt<=Date.now()&&timerNotified!==state.restEndsAt&&!document.hidden){timerNotified=state.restEndsAt;if(pushNotifications.confirmedEnd!==state.restEndsAt)beep();toast('Час наступного підходу!');}}
 setInterval(()=>{if(!document.hidden)updateTimer();},1000);
-document.addEventListener('visibilitychange',()=>{syncWakeLock();if(!document.hidden)updateTimer();});
-window.addEventListener('pageshow',()=>{updateTimer();syncWakeLock();});
+document.addEventListener('visibilitychange',()=>{syncWakeLock();if(!document.hidden){updateTimer();syncPush();}});
+window.addEventListener('pageshow',()=>{updateTimer();syncWakeLock();syncPush();});
 window.addEventListener('pagehide',()=>{wakeLock.sync(false).catch(()=>{});});
 window.addEventListener('beforeunload',event=>{if(pending||failed){event.preventDefault();event.returnValue='';}});
 function storageChanged(){clearUndo();stale=true;showError(new Error('СЕТ оновлено в іншому вікні. За потреби збережи копію та перезавантаж сторінку.'));saveStatus();}
@@ -216,6 +228,8 @@ document.getElementById('noticeExport').addEventListener('click',()=>{if(state)e
 document.getElementById('noticeReload').addEventListener('click',()=>{if((pending||failed)&&!confirm('Є незбережені зміни. Спочатку збережи копію. Перезавантажити?'))return;location.reload();});
 async function boot(){try{const result=await repo.open();state=result.state;ui.tab=state.session?'workout':'home';render();if(result.migrated)toast('Дані перенесено. Попередня копія залишилася на пристрої.');}catch(error){app.innerHTML='<div class="shell"><h1>Не вдалося відкрити дані</h1><p class="subtle">Наявні записи не перезаписані. Збережи копію даних або повтори запуск.</p><button class="btn alt" id="startupImport">Відновити з JSON</button><input type="file" id="startupFile" accept=".json,application/json" hidden></div>';showError(error);document.getElementById('startupImport').onclick=()=>document.getElementById('startupFile').click();document.getElementById('startupFile').onchange=async event=>{try{const file=event.target.files[0];if(!file)return;if(file.size>30*1024*1024)throw new Error('Файл завеликий');const incoming=normalize(JSON.parse(await file.text()));if(!repo.db)throw new Error('Сховище недоступне. Відкрий СЕТ у звичайному режимі Safari.');if(!confirm('Відновити застосунок із перевіреної копії?'))return;await repo.write(incoming);location.reload();}catch(e){showError(e);}};}}
 await boot();
+if(state)void pushNotifications.init().then(syncPush);
+window.addEventListener('online',syncPush);
 setupPWA({canUpdate:()=>!pending&&!failed&&!state?.session,onStatus:status=>{ui.offlineStatus=status;const target=document.getElementById('offlineStatus');if(target)target.textContent=status;},onUpdate:apply=>{const banner=document.getElementById('updateBanner');banner.hidden=false;document.getElementById('applyUpdate').onclick=async()=>{await queue;if(state?.session)return toast('Оновлення можна встановити після завершення тренування');if(failed)return toast('Спочатку збережи незбережені дані');apply();};}}).catch(error=>{ui.offlineStatus=`Офлайн не підготовлено: ${error.message}`;const target=document.getElementById('offlineStatus');if(target)target.textContent=ui.offlineStatus;});
 for(const name of ['online','offline'])window.addEventListener(name,()=>{const target=document.getElementById('connectionStatus');if(target)target.textContent=navigator.onLine?'НА ПРИСТРОЇ':'БЕЗ ІНТЕРНЕТУ';});
 
