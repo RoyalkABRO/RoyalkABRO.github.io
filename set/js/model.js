@@ -5,11 +5,12 @@ export const REST_OPTIONS = [30,60,90,120,180,240,300];
 export const uid = () => globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
 export const clone = value => structuredClone(value);
 export const nameKey = name => name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('uk-UA');
-export const fresh = () => ({version:VERSION,catalog:[],templates:[1,3,5].map((day,i)=>({id:uid(),name:`Тренування ${'ABC'[i]}`,day,exercises:[]})),history:[],session:null,restEndsAt:null,restSeconds:90,lastBackupAt:null});
+export const fresh = () => ({version:VERSION,catalog:[],templates:[1,3,5].map((day,i)=>({id:uid(),name:`Тренування ${'ABC'[i]}`,day,exercises:[]})),history:[],session:null,restEndsAt:null,restSeconds:90,lastBackupAt:null,keepAwake:false});
 const fail = message => { throw new Error(message); };
 const object = x => x && typeof x === 'object' && !Array.isArray(x);
 const text = (x, max=120) => typeof x === 'string' && x.trim().length > 0 && x.length <= max;
 const id = x => text(x,120);
+function note(x){if(x===undefined)return {};if(typeof x!=='string'||x.length>1000)fail('Нотатка має містити до 1000 символів');return {note:x};}
 const date = x => typeof x === 'string' && Number.isFinite(Date.parse(x));
 const list = (x,max) => Array.isArray(x) && x.length <= max;
 const unique = xs => new Set(xs.map(x=>x.id)).size === xs.length;
@@ -34,7 +35,7 @@ export function normalize(raw) {
   const out = {...fresh(),templates:[],history:[],catalog:[]};
   if (!legacy) {
     if (!list(raw.catalog,10000) || !raw.catalog.every(e=>object(e)&&id(e.id)&&text(e.name,90)) || !unique(raw.catalog)) fail('Пошкоджений каталог вправ');
-    out.catalog = raw.catalog.map(e=>({id:e.id,name:e.name.trim()}));
+    out.catalog = raw.catalog.map(e=>({id:e.id,name:e.name.trim(),...note(e.note)}));
   }
   function exerciseId(e) {
     if (!legacy) { if (!id(e.exerciseId) || !out.catalog.some(x=>x.id===e.exerciseId)) fail('Невідома вправа'); return e.exerciseId; }
@@ -58,10 +59,10 @@ export function normalize(raw) {
       if (!list(e.sets,200)||!e.sets.every(s=>validSet(s,completed))||!unique(e.sets)||(completed&&!e.sets.length)) fail('Некоректні підходи');
       const targets={};
       if(e.targetReps!==undefined){if(!Number.isInteger(e.targetReps)||e.targetReps<1||e.targetReps>1000)fail('Некоректна ціль повторень');Object.assign(targets,{targetReps:e.targetReps},repOptions(e));}
-      return {id:e.id,exerciseId:exerciseId(e),name:e.name.trim(),...targets,sets:e.sets.map(s=>({id:s.id,weight:completed?Number(s.weight):s.weight,reps:completed?Number(s.reps):s.reps,done:completed?true:s.done}))};
+      return {id:e.id,exerciseId:exerciseId(e),name:e.name.trim(),...note(e.note),...targets,sets:e.sets.map(s=>({id:s.id,weight:completed?Number(s.weight):s.weight,reps:completed?Number(s.reps):s.reps,done:completed?true:s.done}))};
     });
     if (completed&&!exercises.length) fail('Порожній запис історії');
-    return {id:w.id,templateId:w.templateId,title:w.title.trim(),startedAt:w.startedAt,...(completed?{finishedAt:w.finishedAt}:{}),exercises};
+    return {id:w.id,templateId:w.templateId,title:w.title.trim(),startedAt:w.startedAt,...note(w.note),...(completed?{finishedAt:w.finishedAt}:{}),exercises};
   }
   out.history=raw.history.map(w=>workout(w,true)).sort((a,b)=>Date.parse(a.finishedAt)-Date.parse(b.finishedAt));
   out.session=raw.session==null?null:workout(raw.session,false);
@@ -70,6 +71,7 @@ export function normalize(raw) {
   out.restSeconds=REST_OPTIONS.includes(raw.restSeconds)?raw.restSeconds:90;
   out.restEndsAt=out.session&&Number.isFinite(raw.restEndsAt)&&raw.restEndsAt>0?raw.restEndsAt:null;
   out.lastBackupAt=date(raw.lastBackupAt)?raw.lastBackupAt:null;
+  out.keepAwake=raw.keepAwake===true;
   return out;
 }
 export function getOrCreateExercise(state,name) {
@@ -89,7 +91,7 @@ export function startSession(state,templateId) {
   const t=state.templates.find(t=>t.id===templateId); if(!t) fail('План не знайдено');
   state.session={id:uid(),templateId:t.id,title:t.name,startedAt:new Date().toISOString(),exercises:t.exercises.map(e=>{
     const prior=previousSets(state,e.exerciseId);
-    return {id:uid(),exerciseId:e.exerciseId,name:e.name,targetReps:e.targetReps,...repOptions(e),sets:Array.from({length:e.targetSets},(_,i)=>({id:uid(),weight:prior[i]?.weight??prior.at(-1)?.weight??'',reps:prior[i]?.reps??(e.targetRepsUnspecified?'':e.targetReps),done:false}))};
+    return {id:uid(),exerciseId:e.exerciseId,name:e.name,...note(state.catalog.find(x=>x.id===e.exerciseId)?.note),targetReps:e.targetReps,...repOptions(e),sets:Array.from({length:e.targetSets},(_,i)=>({id:uid(),weight:prior[i]?.weight??prior.at(-1)?.weight??'',reps:prior[i]?.reps??(e.targetRepsUnspecified?'':e.targetReps),done:false}))};
   })};state.restEndsAt=null;
 }
 export function finishSession(state) {
