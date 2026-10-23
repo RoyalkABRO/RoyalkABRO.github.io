@@ -6,7 +6,7 @@ export const REST_OPTIONS = [30,60,90,120,180,240,300];
 export const uid = () => globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
 export const clone = value => structuredClone(value);
 export const nameKey = name => name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('uk-UA');
-export const fresh = () => ({version:VERSION,catalog:[],templates:[1,3,5].map((day,i)=>({id:uid(),name:`Тренування ${'ABC'[i]}`,day,exercises:[]})),history:[],session:null,restEndsAt:null,restSeconds:90,warmupRestSeconds:60,lastBackupAt:null,keepAwake:false});
+export const fresh = () => ({version:VERSION,catalog:[],templates:[1,3,5].map((day,i)=>({id:uid(),name:`Тренування ${'ABC'[i]}`,day,exercises:[]})),history:[],session:null,restEndsAt:null,restSeconds:90,restDuration:90,warmupRestSeconds:60,lastBackupAt:null,keepAwake:false});
 const fail = message => { throw new Error(message); };
 const object = x => x && typeof x === 'object' && !Array.isArray(x);
 const text = (x, max=120) => typeof x === 'string' && x.trim().length > 0 && x.length <= max;
@@ -56,6 +56,7 @@ export function normalize(raw) {
   }
   function workout(w, completed) {
     if (!object(w)||!id(w.id)||!text(w.title,70)||!date(w.startedAt)||!list(w.exercises,200)||!unique(w.exercises)||!(w.templateId===null||id(w.templateId))) fail('Пошкоджене тренування');
+    if(w.goalProgress!==undefined&&(!object(w.goalProgress)||!Number.isInteger(w.goalProgress.total)||w.goalProgress.total<1||w.goalProgress.total>40000||!Number.isInteger(w.goalProgress.met)||w.goalProgress.met<0||w.goalProgress.met>w.goalProgress.total))fail('Некоректний підсумок цілей');
     if(w.easy!==undefined&&typeof w.easy!=='boolean')fail('Некоректний режим заняття');
     if (completed&&(!date(w.finishedAt)||Date.parse(w.finishedAt)<Date.parse(w.startedAt))) fail('Некоректна дата тренування');
     const exercises=w.exercises.map(e=>{
@@ -67,7 +68,7 @@ export function normalize(raw) {
       return {id:e.id,exerciseId:exerciseId(e),name:e.name.trim(),...note(e.note),...targets,sets:e.sets.map(s=>({id:s.id,weight:completed?Number(s.weight):s.weight,reps:completed?Number(s.reps):s.reps,done:completed?true:s.done,...(s.type!==undefined?{type:s.type}:{}),...(s.rir!==undefined?{rir:s.rir}:{})}))};
     });
     if (completed&&!exercises.length) fail('Порожній запис історії');
-    return {id:w.id,templateId:w.templateId,title:w.title.trim(),startedAt:w.startedAt,...note(w.note),...(w.easy!==undefined?{easy:w.easy===true}:{}),...(completed?{finishedAt:w.finishedAt}:{}),exercises};
+    return {id:w.id,templateId:w.templateId,title:w.title.trim(),startedAt:w.startedAt,...(completed&&w.goalProgress?{goalProgress:{...w.goalProgress}}:{}),...note(w.note),...(w.easy!==undefined?{easy:w.easy===true}:{}),...(completed?{finishedAt:w.finishedAt}:{}),exercises};
   }
   out.history=raw.history.map(w=>workout(w,true)).sort((a,b)=>Date.parse(a.finishedAt)-Date.parse(b.finishedAt));
   out.session=raw.session==null?null:workout(raw.session,false);
@@ -75,6 +76,7 @@ export function normalize(raw) {
   if (!unique(out.templates)||!unique(out.history)) fail('Повторні ідентифікатори записів');
   out.warmupRestSeconds=REST_OPTIONS.includes(raw.warmupRestSeconds)?raw.warmupRestSeconds:60;
   out.restSeconds=REST_OPTIONS.includes(raw.restSeconds)?raw.restSeconds:90;
+  out.restDuration=Number.isFinite(raw.restDuration)&&raw.restDuration>0&&raw.restDuration<=86400?raw.restDuration:out.restSeconds;
   out.restEndsAt=out.session&&Number.isFinite(raw.restEndsAt)&&raw.restEndsAt>0?raw.restEndsAt:null;
   out.lastBackupAt=date(raw.lastBackupAt)?raw.lastBackupAt:null;
   out.keepAwake=raw.keepAwake===true;
@@ -102,10 +104,11 @@ export function startSession(state,templateId) {
 }
 export function finishSession(state) {
   if(!state.session) fail('Немає активного тренування');
-  const exercises=state.session.exercises.map(e=>({...e,sets:e.sets.filter(s=>s.done).map(s=>({...s,weight:Number(s.weight),reps:Number(s.reps)}))})).filter(e=>e.sets.length);
+  let total=0,met=0;for(const e of state.session.exercises){const working=e.sets.filter(isWorking);for(const [i,g] of (e.goal?.sets||[]).entries()){total++;const s=working[i];if(s?.done&&Number(s.weight)>=g.weight&&Number(s.reps)>=g.reps)met++;}}
+  const exercises=state.session.exercises.map(e=>({...e,...(e.goal?{goal:{...e.goal,sets:e.goal.sets.filter((_,i)=>e.sets.filter(isWorking)[i]?.done)}}:{}),sets:e.sets.filter(s=>s.done).map(s=>({...s,weight:Number(s.weight),reps:Number(s.reps)}))})).filter(e=>e.sets.length);
   if(!exercises.length) fail('Відміть хоча б один виконаний підхід');
   if(exercises.some(e=>e.sets.some(s=>!validSet(s,true)))) fail('Перевір вагу та повторення');
-  state.history.push({...state.session,finishedAt:new Date().toISOString(),exercises});
+  state.history.push({...state.session,finishedAt:new Date().toISOString(),...(total?{goalProgress:{met,total}}:{}),exercises});
   state.session=null;state.restEndsAt=null;
 }
 export function moveItem(items,id,direction) {
