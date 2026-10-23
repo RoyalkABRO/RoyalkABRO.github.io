@@ -1,7 +1,7 @@
 /* Keep CACHE and ASSETS aligned with js/pwa.js. Each release gets a new cache. */
-const CACHE='set-pwa-v2-20261023-14';
+const CACHE='set-pwa-v2-20261023-16';
 const PREFIX='set-pwa-';
-const ASSETS=['./','./index.html','./styles.css','./app.js','./js/model.js','./js/storage.js','./js/stats.js','./js/timer.js','./js/views.js','./js/pwa.js','./js/programs.js','./js/share.js','./js/icons.js','./js/exports.js','./js/wake-lock.js','./js/progression.js','./js/dashboard.js','./js/design-views.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
+const ASSETS=['./','./index.html','./styles.css','./app.js','./js/model.js','./js/storage.js','./js/stats.js','./js/timer.js','./js/views.js','./js/pwa.js','./js/programs.js','./js/share.js','./js/icons.js','./js/exports.js','./js/wake-lock.js','./js/progression.js','./js/dashboard.js','./js/design-views.js','./js/workout-tools.js','./js/workout-tools-views.js','./js/simple-views.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
   const cache=await caches.open(CACHE);
   const assets=await Promise.all(ASSETS.map(async path=>{

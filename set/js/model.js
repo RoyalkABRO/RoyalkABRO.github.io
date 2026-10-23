@@ -6,7 +6,7 @@ export const REST_OPTIONS = [30,60,90,120,180,240,300];
 export const uid = () => globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
 export const clone = value => structuredClone(value);
 export const nameKey = name => name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('uk-UA');
-export const fresh = () => ({version:VERSION,catalog:[],templates:[1,3,5].map((day,i)=>({id:uid(),name:`Тренування ${'ABC'[i]}`,day,exercises:[]})),history:[],session:null,restEndsAt:null,restSeconds:90,restDuration:90,warmupRestSeconds:60,lastBackupAt:null,keepAwake:false});
+export const fresh = () => ({version:VERSION,catalog:[],templates:[1,3,5].map((day,i)=>({id:uid(),name:`Тренування ${'ABC'[i]}`,day,exercises:[]})),history:[],session:null,restEndsAt:null,restSeconds:90,restDuration:90,warmupRestSeconds:60,lastBackupAt:null,keepAwake:false,focusWorkout:true});
 const fail = message => { throw new Error(message); };
 const object = x => x && typeof x === 'object' && !Array.isArray(x);
 const text = (x, max=120) => typeof x === 'string' && x.trim().length > 0 && x.length <= max;
@@ -20,7 +20,7 @@ export function validSet(s, completed=false) {
   if (completed || s.done) return /^(?:\d+(?:\.\d*)?|\.\d+)$/.test(String(s.weight)) && Number.isFinite(Number(s.weight)) && Number(s.weight)>=0 && Number(s.weight)<=10000 && /^\d+$/.test(String(s.reps)) && Number.isInteger(Number(s.reps)) && Number(s.reps)>0 && Number(s.reps)<=1000;
   return ['string','number'].includes(typeof s.weight) && ['string','number'].includes(typeof s.reps) && String(s.weight).length<=24 && String(s.reps).length<=24;
 }
-function trainingConfig(e){const out={};if(e.weightStep!==undefined){if(typeof e.weightStep!=='number'||!Number.isFinite(e.weightStep)||e.weightStep<=0||e.weightStep>1000)fail('Крок ваги: від 0 до 1000 кг');out.weightStep=e.weightStep;}if(e.weightBasis!==undefined){if(!['total','one-dumbbell'].includes(e.weightBasis))fail('Некоректний спосіб запису ваги');out.weightBasis=e.weightBasis;}return out;}
+function trainingConfig(e){const out={};if(e.equipment!==undefined){if(!object(e.equipment)||Object.keys(e.equipment).some(k=>!['seat','bench','pin','grip'].includes(k))||Object.values(e.equipment).some(v=>typeof v!=='string'||v.length>80))fail('Некоректні налаштування обладнання');out.equipment=Object.fromEntries(Object.entries(e.equipment).map(([k,v])=>[k,v.trim()]));}if(e.weightStep!==undefined){if(typeof e.weightStep!=='number'||!Number.isFinite(e.weightStep)||e.weightStep<=0||e.weightStep>1000)fail('Крок ваги: від 0 до 1000 кг');out.weightStep=e.weightStep;}if(e.weightBasis!==undefined){if(!['total','one-dumbbell'].includes(e.weightBasis))fail('Некоректний спосіб запису ваги');out.weightBasis=e.weightBasis;}return out;}
 function goalData(e){if(e.goal===undefined)return {};const g=e.goal;if(!object(g)||!list(g.sets,200)||!g.sets.every(s=>object(s)&&typeof s.weight==='number'&&typeof s.reps==='number'&&validSet({id:'goal',weight:s.weight,reps:s.reps,done:true},true))||typeof g.reason!=='string'||g.reason.length>300||!['normal','easy','manual'].includes(g.mode))fail('Некоректна ціль заняття');return {goal:{sets:g.sets.map(s=>({weight:s.weight,reps:s.reps})),reason:g.reason,mode:g.mode}};}
 export function repTarget(e){
   if(e.targetRepsUnspecified)return 'повторення за фактом';
@@ -62,7 +62,7 @@ export function normalize(raw) {
     const exercises=w.exercises.map(e=>{
       checkExercise(e);
       if (!list(e.sets,200)||!e.sets.every(s=>validSet(s,completed))||!unique(e.sets)||(completed&&!e.sets.length)) fail('Некоректні підходи');
-      const targets={...trainingConfig(e),...goalData(e)};
+      const targets={...trainingConfig(e),...goalData(e)};if(e.replacementFor!==undefined){const r=e.replacementFor;if(!object(r)||!id(r.exerciseId)||!text(r.name,90)||!out.catalog.some(c=>c.id===r.exerciseId))fail('Некоректна заміна вправи');targets.replacementFor={exerciseId:r.exerciseId,name:r.name};}
       if(e.targetSets!==undefined){if(!Number.isInteger(e.targetSets)||e.targetSets<1||e.targetSets>200)fail('Некоректна кількість підходів');targets.targetSets=e.targetSets;}
       if(e.targetReps!==undefined){if(!Number.isInteger(e.targetReps)||e.targetReps<1||e.targetReps>1000)fail('Некоректна ціль повторень');Object.assign(targets,{targetReps:e.targetReps},repOptions(e));}
       return {id:e.id,exerciseId:exerciseId(e),name:e.name.trim(),...note(e.note),...targets,sets:e.sets.map(s=>({id:s.id,weight:completed?Number(s.weight):s.weight,reps:completed?Number(s.reps):s.reps,done:completed?true:s.done,...(s.type!==undefined?{type:s.type}:{}),...(s.rir!==undefined?{rir:s.rir}:{})}))};
@@ -80,6 +80,7 @@ export function normalize(raw) {
   out.restEndsAt=out.session&&Number.isFinite(raw.restEndsAt)&&raw.restEndsAt>0?raw.restEndsAt:null;
   out.lastBackupAt=date(raw.lastBackupAt)?raw.lastBackupAt:null;
   out.keepAwake=raw.keepAwake===true;
+  out.focusWorkout=raw.focusWorkout!==false;
   return out;
 }
 export function getOrCreateExercise(state,name) {
@@ -100,7 +101,7 @@ export function startSession(state,templateId) {
   state.session={id:uid(),templateId:t.id,title:t.name,startedAt:new Date().toISOString(),exercises:t.exercises.map(e=>{
     const prior=previousSets(state,e.exerciseId);
     return {id:uid(),exerciseId:e.exerciseId,name:e.name,...note(state.catalog.find(x=>x.id===e.exerciseId)?.note),targetSets:e.targetSets,...trainingConfig(state.catalog.find(x=>x.id===e.exerciseId)||{}),targetReps:e.targetReps,...repOptions(e),sets:Array.from({length:e.targetSets},(_,i)=>({id:uid(),weight:prior[i]?.weight??prior.at(-1)?.weight??'',reps:prior[i]?.reps??(e.targetRepsUnspecified?'':e.targetReps),done:false}))};
-  })};state.restEndsAt=null;
+  })};state.restEndsAt=null;state.focusWorkout=true;
 }
 export function finishSession(state) {
   if(!state.session) fail('Немає активного тренування');
