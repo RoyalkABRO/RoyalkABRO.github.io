@@ -83,7 +83,7 @@ export function normalize(raw) {
   out.restEndsAt=out.session&&Number.isFinite(raw.restEndsAt)&&raw.restEndsAt>0?raw.restEndsAt:null;
   out.lastBackupAt=date(raw.lastBackupAt)?raw.lastBackupAt:null;
   out.keepAwake=raw.keepAwake===true;
-  out.focusWorkout=raw.focusWorkout!==false;
+  out.focusWorkout=true;
   return out;
 }
 export function getOrCreateExercise(state,name) {
