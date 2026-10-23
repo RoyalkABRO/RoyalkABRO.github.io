@@ -1,3 +1,4 @@
+import {HEALTH_SHORTCUT_NAME,HealthHandoffs,healthShortcutURL,isHealthDevice,healthGuide,healthWorkoutDialog} from './js/apple-health.js';
 import {PushNotifications} from './js/push-notifications.js';
 import {muscleField} from './js/muscles.js';
 import {exerciseOrderForm,bindExerciseOrder,reorderExercises} from './js/exercise-order.js';
@@ -21,6 +22,9 @@ const app=document.getElementById('app'),modal=document.getElementById('modal'),
 const notice=document.getElementById('notice'),noticeText=document.getElementById('noticeText');
 const navigation=document.getElementById('navigation');
 const repo=new Repository();
+let healthStorage;try{healthStorage=window.localStorage;}catch{}
+const healthHandoffs=new HealthHandoffs(healthStorage);
+function showHealthWorkout(id){const workout=state.history.find(w=>w.id===id);if(!workout)throw Error('Завершене тренування не знайдено.');openModal(healthWorkoutDialog(workout,healthHandoffs,isHealthDevice()),'health-workout');}
 let state,queue=Promise.resolve(),pending=0,failed=false,stale=false,toastHandle,draft=null,historyDraft=null,modalMode='',timerNotified=null,resultFile=null,resultURL=null;
 const ui={tab:'home',historyDays:0,progressDays:0,metric:'weight',exerciseId:null,offlineStatus:'Перевіряємо офлайн-готовність…',storageStatus:'Сховище на пристрої'};
 function updatePushStatus(info){Object.assign(ui,{pushStatus:info.message,pushConnected:info.connected,pushReady:info.ready,pushURL:info.url});for(const id of ['notificationStatus','restNotificationStatus']){const el=document.getElementById(id);if(el){el.textContent=info.message;if(id==='restNotificationStatus')el.hidden=!info.connected;}}for(const [id,hidden] of [['pushEnable',info.connected||!info.ready],['pushTest',!info.connected],['pushDisable',!info.connected],['pushPairing',info.connected],['pushRetry',info.ready]]){const el=document.getElementById(id);if(el)el.hidden=hidden;}}
@@ -116,6 +120,18 @@ async function showResultCard(id){
 function openExerciseConfig(id){const e=state.catalog.find(e=>e.id===id);if(!e)return;openModal(button('close-modal','×','aria-label="Закрити"','modal-close')+'<h2>Налаштування вправи</h2><form id="rename-form" data-id="'+esc(id)+'"><label class="filter-label">Назва<input id="exercise-new-name" class="field" maxlength="90" required value="'+esc(e.name)+'"></label><label class="filter-label">Крок ваги, кг<input id="exercise-weight-step" class="field" type="number" inputmode="decimal" min="0.001" max="1000" step="any" placeholder="Наприклад, 2.5" value="'+esc(e.weightStep??'')+'"></label><label class="filter-label">Як записуєш вагу<select id="exercise-weight-basis" class="field"><option value="total" '+(e.weightBasis!=='one-dumbbell'?'selected':'')+'>Загальна вага</option><option value="one-dumbbell" '+(e.weightBasis==='one-dumbbell'?'selected':'')+'>Вага однієї гантелі</option></select></label>'+equipmentFields(e)+muscleField(e)+'<p class="helper">Крок — наступна доступна різниця ваги. Для гантелей обсяг рахується за записаною вагою однієї гантелі, без подвоєння.</p><button type="submit" class="btn block">Зберегти</button></form>','rename');}
 async function handleAction(b){
   const action=b.dataset.action,id=b.dataset.id;unlockSound();
+  if(action==='health-workout'){ui.healthWorkoutId=id;showHealthWorkout(id);return;}
+  if(action==='health-setup'){ui.healthWorkoutId=id||null;openModal(healthGuide(healthHandoffs.data.configured),'health-setup');return;}
+  if(action==='health-copy-name'){await navigator.clipboard.writeText(HEALTH_SHORTCUT_NAME);toast('Назву команди скопійовано');return;}
+  if(action==='health-configured'){healthHandoffs.configure();if(ui.healthWorkoutId)showHealthWorkout(ui.healthWorkoutId);else{closeModal(true);toast('Тепер відкрий завершене заняття в історії → Додати в Apple Health');}return;}
+  if(action==='health-launch'){
+    const workout=state.history.find(w=>w.id===id);if(!workout)throw Error('Завершене тренування не знайдено.');
+    if(!isHealthDevice()||!healthHandoffs.data.configured)throw Error('Спочатку налаштуй команду на iPhone.');
+    if(healthHandoffs.status(workout)==='confirmed')return;
+    if(['pending','changed'].includes(healthHandoffs.status(workout))&&!confirm('Якщо це заняття вже є у «Здоров’ї», повторний запис створить дублікат. Передати ще раз?'))return;
+    const url=healthShortcutURL(workout);healthHandoffs.mark(workout,'pending');showHealthWorkout(id);location.assign(url);return;
+  }
+  if(action==='health-confirm'){const workout=state.history.find(w=>w.id===id);if(!workout||healthHandoffs.status(workout)!=='pending')return;healthHandoffs.mark(workout,'confirmed');showHealthWorkout(id);return;}
   if(action.startsWith('push-')){if(b.dataset.busy)return;b.dataset.busy='1';b.disabled=true;try{
     if(action==='push-enable'){const code=document.getElementById('pushPairingCode')?.value||'';await pushNotifications.enable(code);const field=document.getElementById('pushPairingCode');if(field)field.value='';await queue;syncPush();}
     if(action==='push-connect'){await pushNotifications.init();syncPush();}
@@ -237,3 +253,4 @@ document.addEventListener('click',event=>{for(const menu of document.querySelect
 document.addEventListener('keydown',event=>{if(event.key==='Escape')for(const menu of document.querySelectorAll('.simple-menu[open]'))menu.open=false;});
 
 document.addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key)&&event.target.matches('.muscle-region')){event.preventDefault();event.target.dispatchEvent(new MouseEvent('click',{bubbles:true}));}});
+
