@@ -21,6 +21,22 @@ function showError(error){noticeText.textContent=error?.message||String(error);n
 function saveStatus(){const target=document.getElementById('saveStatus');if(target)target.textContent=stale?'Є зміни в іншому вікні':failed?'Є незбережені зміни':pending?'Збереження…':'Збережено на пристрої';}
 const wakeLock=new WorkoutWakeLock(navigator,document,message=>{const target=document.getElementById('wakeStatus');if(target)target.textContent=message;});
 function syncWakeLock(){wakeLock.sync(Boolean(state?.keepAwake&&state.session&&ui.tab==='workout')).catch(()=>{});}
+function updateWorkoutProgress(){
+  const rail=document.getElementById('workoutProgress');
+  const sets=state?.session?.exercises.flatMap(workingSets)||[];
+  const total=sets.length,done=sets.filter(s=>s.done).length;
+  const ratio=total?done/total:0,percent=done===total&&total?100:Math.min(99,Math.round(ratio*100));
+  rail.hidden=ui.tab!=='workout'||!state?.session||total===0;
+  rail.style.setProperty('--workout-progress',String(ratio));
+  rail.classList.toggle('is-complete',total>0&&done===total);
+  rail.classList.toggle('has-progress',done>0);
+  rail.setAttribute('aria-valuemax',String(total||1));
+  rail.setAttribute('aria-valuenow',String(done));
+  rail.setAttribute('aria-valuetext',done+' з '+total+' робочих підходів · '+percent+'%');
+  rail.querySelector('.workout-progress-percent').textContent=percent+'%';
+  const summary=document.getElementById('workoutProgressSummary');
+  if(summary)summary.textContent=total?done+' / '+total+' робочих підходів':'Додай робочі підходи';
+}
 function render(){
   app.innerHTML=renderView(state,ui);
   if(!navigation.childElementCount)navigation.innerHTML=renderNavigation();
@@ -29,7 +45,7 @@ function render(){
     const active=tab.dataset.tab===current;tab.classList.toggle('active',active);
     if(active)tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');
   }
-  navigation.hidden=false;saveStatus();updateTimer();syncWakeLock();
+  navigation.hidden=false;updateWorkoutProgress();saveStatus();updateTimer();syncWakeLock();
 }
 function commit(mutator,{redraw=true,preserve=false}={}) {
   pending++;saveStatus();
@@ -40,8 +56,8 @@ function commit(mutator,{redraw=true,preserve=false}={}) {
       const saved=await repo.write(next);state=saved;failed=false;
       if(!stale)notice.hidden=true;
       channel?.postMessage({revision:repo.revision});
-    } catch(error){if(preserve)state=next;failed=true;throw error;}
-    if(redraw)render();
+    } catch(error){if(preserve){state=next;updateWorkoutProgress();}failed=true;throw error;}
+    if(redraw)render();else updateWorkoutProgress();
   }).catch(error=>{showError(error);throw error;}).finally(()=>{pending--;saveStatus();});
   queue=task.catch(()=>{});return task;
 }
