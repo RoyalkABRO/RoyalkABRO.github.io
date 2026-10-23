@@ -29,9 +29,18 @@ export function forecastSession(state,now=Date.now()){
  const w=state.session;if(!w)return null;const elapsed=Math.max(0,(now-Date.parse(w.startedAt))/60000),all=w.exercises.flatMap(e=>e.sets),working=all.filter(isWorking),done=working.filter(s=>s.done).length,pending=working.filter(s=>!s.done).length,warm=all.filter(s=>!isWorking(s)&&!s.done).length;
  const prior=[...state.history].filter(p=>w.templateId&&p.templateId===w.templateId&&Date.parse(p.finishedAt)<=Date.parse(w.startedAt)).sort((a,b)=>Date.parse(b.finishedAt)-Date.parse(a.finishedAt))[0];
  const priorCount=prior?.exercises.flatMap(workingSets).length||0;
- let cycle=.75+state.restSeconds/60,source='за часом підходу й відпочинку';
- if(priorCount){cycle=Math.max(.5,Math.min(8,previousDuration(state)/priorCount));source='за минулим заняттям';}
- if(done>=3&&elapsed>=3){cycle=Math.max(.5,Math.min(8,elapsed/done));source='за поточним темпом';}
- const left=pending*cycle+warm*(.5+state.warmupRestSeconds/60),minutes=Math.ceil(left),finish=now+minutes*60000;
+ let estimated=false,cycle=.75+state.restSeconds/60,source='за часом підходу й відпочинку';
+ if(priorCount){estimated=true;cycle=Math.max(.5,Math.min(8,previousDuration(state)/priorCount));source='за минулим заняттям';}
+ if(done>=3&&elapsed>=3){estimated=true;cycle=Math.max(.5,Math.min(8,elapsed/done));source='за поточним темпом';}
+ const remainingExercises=w.exercises.filter(e=>workingSets(e).some(s=>!s.done)).length;
+ const baseline=pending*.75+Math.max(0,pending-remainingExercises)*state.restSeconds/60+Math.max(0,remainingExercises-1)*(state.exerciseRestSeconds??180)/60+Math.max(0,((state.restEndsAt||now)-now)/60000);
+ const left=(estimated?pending*cycle:baseline)+warm*(.5+state.warmupRestSeconds/60),minutes=Math.ceil(left),finish=now+minutes*60000;
  return {elapsed,minutes,finish,total:Math.ceil(elapsed+left),over:elapsed+left>90,source,pending,done,optional:optionalSets(w)};
+}
+
+export function restAfterSet(state,exercise,set){
+ if(set.type==='warmup')return {seconds:state.warmupRestSeconds,kind:'warmup'};
+ if(workingSets(exercise).some(s=>!s.done))return {seconds:state.restSeconds,kind:'set'};
+ const hasNext=state.session.exercises.some(e=>e.id!==exercise.id&&workingSets(e).some(s=>!s.done));
+ return {seconds:hasNext?state.exerciseRestSeconds:0,kind:'exercise'};
 }
