@@ -1,0 +1,23 @@
+name: SET push runtime check
+on:
+  push:
+    paths:
+      - 'set-notifications/**'
+      - '.github/workflows/set-push-check.yml'
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --no-audit --no-fund
+        working-directory: set-notifications
+      - run: npm test
+        working-directory: set-notifications
+      - run: npm run test:runtime
+        working-directory: set-notifications
