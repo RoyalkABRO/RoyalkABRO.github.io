@@ -70,21 +70,21 @@ async function shareProgramText(){
 }
 async function handleAction(b){
   const action=b.dataset.action,id=b.dataset.id;unlockSound();
-  if(action==='tab'){await queue;ui.tab=b.dataset.tab;render();window.scrollTo({top:0});return;}
-  if(action==='resume'){ui.tab='workout';render();return;}
+  if(action==='tab'){await queue;if(window.scrollY)window.scrollTo(0,0);ui.tab=b.dataset.tab;render();if(window.scrollY)window.scrollTo(0,0);return;}
+  if(action==='resume'){if(window.scrollY)window.scrollTo(0,0);ui.tab='workout';render();return;}
   if(action==='new-template')return editTemplate();
   if(action==='preview-program'){await queue;openModal(programPreview(state),'program');return;}
   if(action==='add-program'){let added=0;await commit(s=>{added=addPersonalProgram(s);});closeModal(true);toast(added?'Програму додано: по 4 підходи у кожній вправі':'Програму вже додано');return;}
   if(action==='edit-template')return editTemplate(id);
-  if(action==='start'){await commit(s=>startSession(s,id),{redraw:false});ui.tab='workout';render();window.scrollTo({top:0});toast('Тренування розпочато');return;}
+  if(action==='start'){await commit(s=>startSession(s,id),{redraw:false});if(window.scrollY)window.scrollTo(0,0);ui.tab='workout';render();toast('Тренування розпочато');return;}
   if(action==='add-set')return commit(s=>{const e=sessionExercise(s,id);if(e.sets.length>=200)throw new Error('Максимум 200 підходів');const p=e.sets.at(-1);e.sets.push({id:uid(),weight:p?.weight??'',reps:p?.reps??'',done:false});});
   if(action==='remove-set'){await queue;const e=state.session?.exercises.find(e=>e.id===id);if(!e||e.sets.length<=1)return toast('Залиш хоча б один підхід');if(e.sets.at(-1).done&&!confirm('Видалити виконаний підхід?'))return;return commit(s=>sessionExercise(s,id).sets.pop());}
   if(action==='toggle-set')return commit(s=>{const set=sessionSet(s,b.dataset.ex,b.dataset.set);if(!set.done&&!validSet({...set,done:true},true))throw new Error('Вкажи вагу 0–10000 кг і цілу кількість повторень 1–1000');set.done=!set.done;if(set.done){s.restEndsAt=Date.now()+s.restSeconds*1000;timerNotified=null;}});
   if(action==='session-move')return commit(s=>moveItem(s.session.exercises,id,Number(b.dataset.direction)));
   if(action==='remove-session-ex'){if(confirm('Прибрати вправу та її підходи з поточного тренування?'))return commit(s=>{s.session.exercises=s.session.exercises.filter(e=>e.id!==id);});return;}
   if(action==='session-add-ex'){openModal(`${button('close-modal','×','aria-label="Закрити"','modal-close')}<h2>Додати вправу</h2><form id="session-ex-form"><div class="labels"><label for="session-ex-name">Назва вправи</label><input id="session-ex-name" class="field" maxlength="90" required list="exercise-names" autofocus></div>${catalogList(state)}<button class="btn block" type="submit">Додати до тренування</button></form>`,'session-ex');return;}
-  if(action==='finish-workout'){await queue;const unmarked=state.session.exercises.reduce((n,e)=>n+e.sets.filter(s=>!s.done).length,0);if(unmarked&&!confirm(`Не позначено ${unmarked} підходів. Зберегти лише виконані й завершити тренування?`))return;await commit(finishSession,{redraw:false});ui.tab='history';render();toast('Тренування збережено! 💪');return;}
-  if(action==='cancel-workout'){if(confirm('Скасувати поточне тренування та видалити введені результати?')){await commit(s=>{s.session=null;s.restEndsAt=null;},{redraw:false});ui.tab='home';render();}return;}
+  if(action==='finish-workout'){await queue;const unmarked=state.session.exercises.reduce((n,e)=>n+e.sets.filter(s=>!s.done).length,0);if(unmarked&&!confirm(`Не позначено ${unmarked} підходів. Зберегти лише виконані й завершити тренування?`))return;await commit(finishSession,{redraw:false});if(window.scrollY)window.scrollTo(0,0);ui.tab='history';render();toast('Тренування збережено! 💪');return;}
+  if(action==='cancel-workout'){if(confirm('Скасувати поточне тренування та видалити введені результати?')){await commit(s=>{s.session=null;s.restEndsAt=null;},{redraw:false});if(window.scrollY)window.scrollTo(0,0);ui.tab='home';render();}return;}
   if(action==='rest-start'||action==='rest-adjust')return commit(s=>{if(!s.session)return;s.restEndsAt=action==='rest-adjust'?Math.max(Date.now(),s.restEndsAt||Date.now())+30000:Date.now()+s.restSeconds*1000;timerNotified=null;},{redraw:false}).then(updateTimer);
   if(action==='rest-stop')return commit(s=>{s.restEndsAt=null;timerNotified=null;},{redraw:false}).then(updateTimer);
   if(action==='export')return exportBackup();

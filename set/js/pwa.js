@@ -1,4 +1,4 @@
-export const CACHE_NAME='set-pwa-v2-20261023-8';
+export const CACHE_NAME='set-pwa-v2-20261023-9';
 export const OFFLINE_ASSETS=['./','./index.html','./styles.css','./app.js','./js/model.js','./js/storage.js','./js/stats.js','./js/timer.js','./js/views.js','./js/pwa.js','./js/programs.js','./js/share.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 export async function checkOffline(){
   if(!('serviceWorker' in navigator)||!window.isSecureContext)return 'Потрібен HTTPS або localhost для офлайн-режиму';

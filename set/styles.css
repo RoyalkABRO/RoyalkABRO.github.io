@@ -32,9 +32,9 @@
 
 /* ---------- Base ---------- */
 *,*::before,*::after{box-sizing:border-box}
-html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);-webkit-text-size-adjust:100%;text-size-adjust:100%}
-html{scrollbar-gutter:stable}
-body{min-height:100svh;padding-bottom:calc(110px + env(safe-area-inset-bottom));-webkit-tap-highlight-color:transparent;line-height:1.4}
+html,body{margin:0;background:var(--bg);color:var(--text);-webkit-text-size-adjust:100%;text-size-adjust:100%}
+html{height:100%;scrollbar-gutter:stable}
+body{min-height:100%;min-height:-webkit-fill-available;min-height:100vh;padding-bottom:calc(110px + env(safe-area-inset-bottom));-webkit-tap-highlight-color:transparent;line-height:1.4}
 body::before{content:"";position:fixed;inset:0 0 auto 0;height:340px;pointer-events:none;z-index:-1;background:radial-gradient(60% 100% at 50% 0%,rgba(200,245,66,.07),transparent 70%)}
 button,input,select,textarea{font:inherit;color:inherit}
 input,select,textarea{font-size:16px;min-width:0}
@@ -132,7 +132,7 @@ button:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid var
 .badge-count{font-size:11px;background:var(--surface2);color:var(--muted);padding:6px 10px;border-radius:99px}
 
 /* ---------- Bottom navigation ---------- */
-.navbar{position:fixed;z-index:20;left:max(12px,env(safe-area-inset-left));right:max(12px,env(safe-area-inset-right));bottom:calc(12px + env(safe-area-inset-bottom));height:66px;max-width:440px;margin:0 auto;display:flex;justify-content:space-between;gap:2px;padding:6px;background:rgba(22,22,26,.78);backdrop-filter:saturate(160%) blur(20px);-webkit-backdrop-filter:saturate(160%) blur(20px);border:1px solid var(--line2);border-radius:24px;box-shadow:0 12px 40px -10px rgba(0,0,0,.7)}
+.navbar{position:fixed;z-index:20;left:max(12px,env(safe-area-inset-left));right:max(12px,env(safe-area-inset-right));bottom:calc(12px + env(safe-area-inset-bottom));height:66px;max-width:440px;margin:0 auto;display:flex;justify-content:space-between;gap:2px;padding:6px;background:rgba(22,22,26,.78);backdrop-filter:saturate(160%) blur(20px);-webkit-backdrop-filter:saturate(160%) blur(20px);border:1px solid var(--line2);border-radius:24px;box-shadow:0 12px 40px -10px rgba(0,0,0,.7);transform:translateZ(0)}
 .nav-btn{flex:1 1 0;min-width:0;height:52px;min-height:52px;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:22px 13px;justify-items:center;align-content:center;gap:4px;padding:6px 4px;background:none;border:0;border-radius:18px;color:var(--muted2);font-size:10.5px;line-height:13px;white-space:nowrap;font-weight:500;letter-spacing:.01em;transition:color .2s,background .2s}
 .nav-btn .nav-icon{display:grid;place-items:center;height:22px;font-size:18px;line-height:1}
 .nav-btn .nav-icon svg{width:22px;height:22px}
