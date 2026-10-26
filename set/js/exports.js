@@ -6,7 +6,7 @@ const cell = value => '"' + String(value ?? '').replace(/^(\s*)([=+@-])/, "$1'$2
 export function historyCSV(history) {
   const rows = [['Дата','Тренування','Початок','Завершення','Хвилини','Вправа','Підхід','Вага (кг)','Повторення','Нотатка вправи','Нотатка тренування','Тип підходу','Запас повторень','Запис ваги']];
   for (const w of history) for (const e of w.exercises) e.sets.forEach((s,i) => rows.push([
-    localDay(w.finishedAt), w.title, w.startedAt, w.finishedAt,
+    localDay(w.startedAt), w.title, w.startedAt, w.finishedAt,
     Math.round((Date.parse(w.finishedAt)-Date.parse(w.startedAt))/60000),
     e.name, setLabel(e,i), s.weight, s.reps, e.note || '', w.note || '', s.type==='warmup'?'Розминка':'Робочий', s.rir===2?'2+':s.rir??'', e.weightBasis==='one-dumbbell'?'Одна гантель':'Загальна вага'
   ]));
@@ -40,7 +40,7 @@ export async function workoutImage(w, history = []) {
   }
   clipped(first||second,80,370,64,'#f5f5f0',700);
   if(first&&second)clipped(second,80,448,64,'#f5f5f0',700);
-  text(new Date(w.finishedAt).toLocaleDateString('uk-UA',{day:'numeric',month:'long',year:'numeric'}),80,535,30,'#a3aaa0');
+  text(new Date(w.startedAt).toLocaleDateString('uk-UA',{day:'numeric',month:'long',year:'numeric'}),80,535,30,'#a3aaa0');
   const sets=w.exercises.reduce((n,e)=>n+e.sets.filter(isWorking).length,0);
   const minutes=Math.max(1,Math.round((Date.parse(w.finishedAt)-Date.parse(w.startedAt))/60000));
   text(volume(w).toLocaleString('uk-UA')+' кг',80,700,92,'#c8f542',700);
@@ -65,3 +65,4 @@ export async function workoutImage(w, history = []) {
   text('КОЖЕН ПІДХІД МАЄ ЗНАЧЕННЯ.',80,1840,27,'#c8f542',600);
   return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Не вдалося зберегти картку')),'image/png'));
 }
+

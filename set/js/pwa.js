@@ -1,4 +1,4 @@
-export const CACHE_NAME='set-pwa-v2-20261024-21';
+export const CACHE_NAME='set-pwa-v2-20261027-22';
 export const OFFLINE_ASSETS=['./','./index.html','./styles.css','./app.js','./js/model.js','./js/storage.js','./js/stats.js','./js/timer.js','./js/views.js','./js/pwa.js','./js/programs.js','./js/share.js','./js/icons.js','./js/exports.js','./js/wake-lock.js','./js/progression.js','./js/dashboard.js','./js/design-views.js','./js/workout-tools.js','./js/workout-tools-views.js','./js/simple-views.js','./js/exercise-order.js','./js/muscles.js','./js/progress-overview.js','./js/push-notifications.js','./js/notification-config.js','./js/apple-health.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 export async function checkOffline(){
   if(!('serviceWorker' in navigator)||!window.isSecureContext)return 'Потрібен HTTPS або localhost для офлайн-режиму';

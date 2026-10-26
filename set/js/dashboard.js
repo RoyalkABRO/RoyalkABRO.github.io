@@ -6,10 +6,10 @@ export function workoutPRs(history,w){
 }
 const monday=date=>{const d=new Date(date);d.setHours(0,0,0,0);d.setDate(d.getDate()-(d.getDay()+6)%7);return d;};
 export function dashboard(state,now=new Date()){
- const start=monday(now),days=Array.from({length:7},(_,i)=>{const d=new Date(start);d.setDate(d.getDate()+i);return {key:localDay(d),today:localDay(d)===localDay(now),count:state.history.filter(w=>localDay(w.finishedAt)===localDay(d)).length,planned:state.templates.some(t=>t.exercises.length&&t.day===d.getDay())};});
- const weeks=new Set(state.history.filter(w=>Date.parse(w.finishedAt)<=now.getTime()).map(w=>localDay(monday(w.finishedAt))));let cursor=new Date(start),streak=0;
+ const start=monday(now),days=Array.from({length:7},(_,i)=>{const d=new Date(start);d.setDate(d.getDate()+i);return {key:localDay(d),today:localDay(d)===localDay(now),count:state.history.filter(w=>localDay(w.startedAt)===localDay(d)).length,planned:state.templates.some(t=>t.exercises.length&&t.day===d.getDay())};});
+ const weeks=new Set(state.history.filter(w=>Date.parse(w.startedAt)<=now.getTime()).map(w=>localDay(monday(w.startedAt))));let cursor=new Date(start),streak=0;
  if(!weeks.has(localDay(cursor)))cursor.setDate(cursor.getDate()-7);while(weeks.has(localDay(cursor))){streak++;cursor.setDate(cursor.getDate()-7);}
- const month=state.history.filter(w=>{const d=new Date(w.finishedAt);return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()&&d<=now;});
+ const month=state.history.filter(w=>{const d=new Date(w.startedAt);return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()&&d<=now;});
  const plans=state.templates.filter(t=>t.exercises.length).slice().sort((a,b)=>(a.day-now.getDay()+7)%7-(b.day-now.getDay()+7)%7);
  return {days,streak,monthCount:month.length,monthVolume:month.reduce((n,w)=>n+volume(w),0),monthPRs:month.reduce((n,w)=>n+workoutPRs(state.history,w).length,0),featured:plans[0]||state.templates[0],greeting:now.getHours()<5?'Доброї ночі':now.getHours()<12?'Добрий ранок':now.getHours()<18?'Добрий день':'Добрий вечір'};
 }
@@ -22,3 +22,4 @@ export function workoutSummary(history,w){
 }
 export function nextSet(session){if(!session)return null;for(const e of session.exercises){const s=e.sets.find(s=>!s.done);if(s){const index=workingSets(e).indexOf(s);return {exercise:e,set:s,index:e.sets.indexOf(s),target:isWorking(s)?e.goal?.sets[index]:null};}}return null;}
 export function barbellPlates(weight,bar=20){if(!Number.isFinite(weight)||!Number.isFinite(bar)||bar<=0||weight<bar)return null;let rest=Math.round((weight-bar)*100)/200;const plates=[];for(const p of [25,20,15,10,5,2.5,1.25])while(rest>=p-0.00001){plates.push(p);rest-=p;}return {plates,remainder:Math.max(0,Math.round(rest*200)/100)};}
+

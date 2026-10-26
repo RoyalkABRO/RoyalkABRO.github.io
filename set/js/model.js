@@ -71,7 +71,7 @@ export function normalize(raw) {
     if (completed&&!exercises.length) fail('Порожній запис історії');
     return {id:w.id,templateId:w.templateId,title:w.title.trim(),startedAt:w.startedAt,...(completed&&w.goalProgress?{goalProgress:{...w.goalProgress}}:{}),...note(w.note),...(w.easy!==undefined?{easy:w.easy===true}:{}),...(completed?{finishedAt:w.finishedAt}:{}),exercises};
   }
-  out.history=raw.history.map(w=>workout(w,true)).sort((a,b)=>Date.parse(a.finishedAt)-Date.parse(b.finishedAt));
+  out.history=raw.history.map(w=>workout(w,true)).sort((a,b)=>Date.parse(a.startedAt)-Date.parse(b.startedAt));
   out.session=raw.session==null?null:workout(raw.session,false);
   if(out.session&&out.history.some(w=>w.id===out.session.id)) fail('Поточне тренування вже є в історії');
   if (!unique(out.templates)||!unique(out.history)) fail('Повторні ідентифікатори записів');
@@ -119,4 +119,13 @@ export function finishSession(state) {
 export function moveItem(items,id,direction) {
   const index=items.findIndex(e=>e.id===id), next=index+direction;
   if(index>=0&&next>=0&&next<items.length) [items[index],items[next]]=[items[next],items[index]];
+}
+
+
+// Validate both endpoints together before saving a historical correction.
+export function workoutTimes(start,end){
+  const a=new Date(start).getTime(),b=new Date(end).getTime();
+  if(!Number.isFinite(a)||!Number.isFinite(b))throw Error('Вкажи початок і завершення тренування.');
+  if(b<=a)throw Error('Завершення має бути пізніше за початок тренування.');
+  return {startedAt:new Date(a).toISOString(),finishedAt:new Date(b).toISOString()};
 }
