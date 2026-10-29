@@ -60,3 +60,13 @@ export function recordIndex(history){return cached(recordCache,history,()=>{
 });}
 export function workoutPRs(history,w){const found=history.includes(w)?recordIndex(history).get(w.id):null;return found||directWorkoutPRs(history,w);}
 export function recordCount(history,within=history){const index=recordIndex(history);let n=0;for(const w of within)n+=(index.get(w.id)||workoutPRs(history,w)).length;return n;}
+const priorWeightCache=new WeakMap();
+export function priorWeights(history){return cached(priorWeightCache,history,()=>{
+ const starts=[...history].sort((a,b)=>Date.parse(a.startedAt)-Date.parse(b.startedAt)),finishes=[...history].sort((a,b)=>Date.parse(a.finishedAt)-Date.parse(b.finishedAt)),best=new Map(),result=new Map();let cursor=0;
+ const add=(map,w)=>{for(const e of w.exercises)for(const s of e.sets)if(s.done&&isWorking(s))map.set(e.exerciseId,Math.max(map.get(e.exerciseId)??-Infinity,Number(s.weight)));};
+ for(const w of starts){while(cursor<finishes.length&&Date.parse(finishes[cursor].finishedAt)<=Date.parse(w.startedAt))add(best,finishes[cursor++]);
+  if(Date.parse(w.finishedAt)<=Date.parse(w.startedAt)){const baseline=new Map();for(const p of history)if(p.id!==w.id&&Date.parse(p.finishedAt)<=Date.parse(w.startedAt))add(baseline,p);result.set(w.id,baseline);}
+  else result.set(w.id,new Map(best));
+ }
+ return result;
+});}

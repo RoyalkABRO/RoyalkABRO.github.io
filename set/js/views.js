@@ -1,5 +1,5 @@
 import {notificationSettings} from './push-notifications.js';
-import {progressSummaryBar,progressDetailsSection} from './progress-overview.js';
+import {progressSummaryBar,muscleProgressPanel} from './progress-overview.js';
 import {simpleWorkoutView,renderExerciseCard} from './simple-views.js';
 import {equipmentText} from './workout-tools.js';
 import {homeDesign,completionDesign} from './design-views.js';
@@ -10,6 +10,8 @@ import {volume,filteredHistory,series,records,monthActivity,localDay} from './st
 import {formatClock} from './timer.js';
 import {programText} from './share.js';
 import {icon} from './icons.js';
+import {weekGroups,historyFacts} from './dashboard.js';
+import {newestFirst} from './history-index.js';
 export const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function fmtDate(iso){
   return fmtDateCache.get(iso)||(fmtDateCache.set(iso,new Date(iso).toLocaleDateString('uk-UA',{day:'numeric',month:'long',year:'numeric'})),fmtDateCache.get(iso));
@@ -44,7 +46,7 @@ export function setRow(e,s,j,editing=false,showEffort=true,previous=null){
   return '<div class="set-grid '+(editing?'':'journal-grid')+'">'+badge+(editing?'':'<span class="previous-set">'+(previous?formatNumber(previous.weight)+' × '+previous.reps:'—')+'</span>')+'<label class="set-cell"><span class="set-cell-label">Кг</span><input class="set-input" inputmode="decimal" type="text" maxlength="24" placeholder="0" aria-label="Вага підходу '+label+', '+esc(e.name)+'" data-ex="'+esc(e.id)+'" data-set="'+esc(s.id)+'" data-field="weight" value="'+esc(s.weight)+'"></label><label class="set-cell"><span class="set-cell-label">Повт.</span><input class="set-input" inputmode="numeric" type="text" maxlength="24" placeholder="8" aria-label="Повторення підходу '+label+', '+esc(e.name)+'" data-ex="'+esc(e.id)+'" data-set="'+esc(s.id)+'" data-field="reps" value="'+esc(s.reps)+'"></label>'+doneBtn+'</div>'+((showEffort&&(s.done||editing))?effortField(e,s,editing):'');
 }
 function effortField(e,s,editing){return '<label class="effort-label">Запас повторень <select '+(editing?'data-history-rir':'data-rir')+' data-ex="'+esc(e.id)+'" data-set="'+esc(s.id)+'" aria-label="Запас повторень"><option value="" '+(s.rir==null?'selected':'')+'>Не вказано</option>'+[[2,'Ще 2+'],[1,'Ще 1'],[0,'Без запасу']].map(([n,t])=>'<option value="'+n+'" '+(s.rir===n?'selected':'')+'>'+t+'</option>').join('')+'</select></label>';}
-export function goalForm(state,e){const g=e.goal||suggestGoal(state,e),rows=workingSets(e);return button('close-modal','×','aria-label="Закрити"','modal-close')+'<h2>Ціль: '+esc(e.name)+'</h2><p class="scope-badge">Діє лише для сьогоднішнього заняття</p><p class="helper">Зміняться лише невиконані робочі підходи. Вже записані результати збережуться.</p><form id="goal-form" data-id="'+esc(e.id)+'"><div class="target-grid goal-head"><span>№</span><span>Кг</span><span>Повт.</span></div>'+rows.map((s,i)=>{const p=g.sets[i]||s;return '<div class="target-grid goal-input-row"><span>'+(i+1)+'</span><input class="field" data-goal-weight type="number" inputmode="decimal" min="0" max="10000" step="any" required value="'+esc(p.weight)+'"><input class="field" data-goal-reps type="number" inputmode="numeric" min="1" max="1000" step="1" required value="'+esc(p.reps)+'"></div>';}).join('')+'<button class="btn block" type="submit">Прийняти ціль</button></form>';}
+export function goalForm(state,e){const g=e.goal||suggestGoal(state,e),rows=workingSets(e);return button('close-modal','×','aria-label="Закрити"','modal-close')+'<h2>Ціль: '+esc(e.name)+'</h2><p class="scope-badge">Діє лише для сьогоднішнього заняття</p><p class="helper">Зміняться лише невиконані робочі підходи. Вже записані результати збережуться.</p><form id="goal-form" data-id="'+esc(e.id)+'"><div class="target-grid goal-head"><span>№</span><span>Кг</span><span>Повт.</span></div>'+rows.map((s,i)=>{const p=g.sets[i]||s;return '<div class="target-grid goal-input-row"><span>'+(i+1)+'</span><input class="field" data-goal-weight type="number" inputmode="decimal" min="0" max="10000" step="any" required value="'+esc(p.weight)+'"><input class="field" data-goal-reps type="number" inputmode="numeric" min="1" max="1000" step="1" required value="'+esc(p.reps)+'"></div>';}).join('')+'<button class="btn block" type="submit">Прийняти ціль</button></form><div class="btn-column">'+button('set-options','Типи підходів','data-id="'+esc(e.id)+'"','btn alt block')+button('exercise-config','Обладнання та крок ваги','data-id="'+esc(e.id)+'"','btn alt block')+'</div>';}
 function noteField(note,extra,label='Нотатка до вправи'){return '<label class="note-label">'+label+'<textarea class="field workout-note" maxlength="1000" rows="2" placeholder="Наприклад: висота сидіння 4, широкий хват" '+extra+'>'+esc(note||'')+'</textarea></label>';}
 export function workoutView(state,ui){return simpleWorkoutView(state,ui,(e,s,j,current,previous)=>setRow(e,s,j,false,false,previous));}
 export function renderFocusedExercise(state,e,index,total){return renderExerciseCard(state,e,index,total,(ex,s,j,current,previous)=>setRow(ex,s,j,false,false,previous));}
@@ -55,33 +57,14 @@ function activityCalendar(history,monthKey,selectedDate){
  return '<section class="card activity-calendar"><div class="row"><h2>'+esc(month.toLocaleDateString('uk-UA',{month:'long',year:'numeric'}))+'</h2><div class="controls">'+button('calendar-month','‹','data-direction="-1" aria-label="Попередній місяць"')+button('calendar-month','›','data-direction="1" aria-label="Наступний місяць"')+'</div></div><div class="calendar-grid">'+['Пн','Вт','Ср','Чт','Пт','Сб','Нд'].map(d=>'<span class="calendar-weekday">'+d+'</span>').join('')+'<span class="calendar-gap" style="grid-column:span '+(offset||1)+'" '+(!offset?'hidden':'')+'></span>'+days.map(d=>'<button type="button" data-action="history-day" data-date="'+d.date+'" aria-pressed="'+(selectedDate===d.date)+'" class="calendar-day '+(d.count?'trained ':'')+(d.date===today?'is-today':'')+'" aria-label="'+d.date+': '+d.count+' тренувань" title="'+d.count+' тренувань">'+d.day+(d.count>1?'<small>'+d.count+'</small>':'')+'</button>').join('')+'</div><p class="helper">Підсвічені дні — завершені тренування.</p></section>';
 }
 function historyView(state,ui){
- const completed=state.history.find(w=>w.id===ui.finishedId);
- if(completed)return completionDesign(state,completed);
- const mode=ui.historyMode||'list',monthKey=ui.calendarMonth||localDay(new Date()).slice(0,7);
- const within=filteredHistory(state.history,ui.historyDays);
- const history=[...within].reverse().filter(w=>mode!=='calendar'||(ui.historyDate?localDay(w.finishedAt)===ui.historyDate:localDay(w.finishedAt).startsWith(monthKey)));
- return `<h1 class="page-title">Історія</h1><p class="page-intro">Твої завершені заняття.</p>
- <div class="history-toolbar">
-  ${periodSelect('history-period',ui.historyDays)}
-  <div class="segmented history-view-switch" role="group" aria-label="Спосіб перегляду історії">
-   ${button('history-mode','Список',`data-mode="list" aria-pressed="${mode!=='calendar'}"`,mode!=='calendar'?'btn sm':'btn alt sm')}
-   ${button('history-mode','Календар',`data-mode="calendar" aria-pressed="${mode==='calendar'}"`,mode==='calendar'?'btn sm':'btn alt sm')}
-  </div>
- </div>
- ${mode==='calendar'?activityCalendar(within,ui.calendarMonth,ui.historyDate):''}
- ${history.length?`<div class="history-list">${history.map(w=>{
-  const duration=Math.max(1,Math.round((Date.parse(w.finishedAt)-Date.parse(w.startedAt))/60000));
-  const sets=w.exercises.reduce((s,e)=>s+e.sets.filter(isWorking).length,0);
-  return `<button type="button" class="card history-card history-button" data-action="history-detail" data-id="${esc(w.id)}">
-   <span class="history-row-main">
-    <span class="history-row-date">${shortDate(w.finishedAt)}</span>
-    <strong class="history-row-title">${esc(w.title)}</strong>
-    <span class="history-row-duration">${duration} хв</span>
-    <span class="history-chevron" aria-hidden="true">›</span>
-   </span>
-   <span class="history-row-sub">${w.exercises.length} вправ · ${sets} робочих підходів · ${formatNumber(volume(w))} кг</span>
-  </button>`;
- }).join('')}</div>`:`<div class="empty"><strong>${state.history.length?'За цей період записів немає':'Історія поки порожня'}</strong>Завершені тренування зʼявляться тут.</div>`}`;
+ const completed=state.history.find(w=>w.id===ui.finishedId);if(completed)return completionDesign(state,completed);
+ const mode=ui.historyMode||'list',monthKey=ui.calendarMonth||localDay(new Date()).slice(0,7),within=filteredHistory(state.history,ui.historyDays);
+ const history=within.filter(w=>mode!=='calendar'||(ui.historyDate?localDay(w.finishedAt)===ui.historyDate:localDay(w.finishedAt).startsWith(monthKey))),shown=newestFirst(history).slice(0,ui.historyLimit||50),groups=weekGroups(shown,state.history),max=Math.max(1,...history.map(volume));
+ const date=d=>d.toLocaleDateString('uk-UA',{day:'numeric',month:'short'}),tonnes=n=>formatNumber(Math.round(n/100)/10)+' т';
+ return '<h1 class="page-title">Історія</h1><div class="history-toolbar">'+periodSelect('history-period',ui.historyDays)+'<div class="segmented history-view-switch" role="group" aria-label="Спосіб перегляду історії">'+[['list','Список'],['calendar','Календар']].map(([key,label])=>button('history-mode',label,'data-mode="'+key+'" aria-pressed="'+(mode===key)+'"','btn sm '+(mode===key?'':'alt'))).join('')+'</div></div>'+(mode==='calendar'?activityCalendar(within,ui.calendarMonth,ui.historyDate):'')+(history.length?'<div class="history-list">'+groups.map(group=>'<section class="history-week"><div class="history-week-heading"><h2>'+group.label+' · '+date(group.start)+' – '+date(group.end)+'</h2><span class="volume-badge">'+tonnes(group.volume)+(group.delta===null?'':' <span class="week-delta">'+icon(group.delta>=0?'arrow-up':'arrow-down')+(group.delta>=0?'+':'')+group.delta+'%</span>')+'</span></div>'+group.workouts.map(({workout:w,prs,top,isPR,deltaWeight,volume:v})=>{
+ const duration=Math.max(1,Math.round((Date.parse(w.finishedAt)-Date.parse(w.startedAt))/60000)),sets=w.exercises.reduce((n,e)=>n+e.sets.filter(isWorking).length,0);
+ return '<button type="button" class="card history-card history-button" data-action="history-detail" data-id="'+esc(w.id)+'"><span class="history-card-head"><span><strong class="history-row-title">'+esc(w.title)+'</strong><span class="history-row-date">'+shortDate(w.finishedAt)+' · '+duration+' хв · '+w.exercises.length+' вправ · '+sets+' сетів</span></span><span class="history-card-values"><strong>'+formatNumber(v)+' кг</strong>'+(prs.length?'<span class="pr-badge">'+icon('trophy')+prs.length+' PR</span>':'')+'</span></span><span class="history-volume-track" aria-hidden="true"><i style="width:'+v/max*100+'%"></i></span>'+(top?'<span class="history-top-record">'+icon('trophy')+'<span>'+(isPR?'Топ-рекорд дня: ':'Найкращий підхід: ')+esc(top.name)+'<strong>'+formatNumber(top.set.weight)+' кг × '+top.set.reps+(deltaWeight!==null?' (+'+formatNumber(deltaWeight)+' кг)':'')+'</strong></span></span>':'')+'</button>';
+ }).join('')+'</section>').join('')+'</div>'+(shown.length<history.length?button('history-more','Показати ще ('+(history.length-shown.length)+')','','btn alt block'):''):'<div class="empty"><strong>За цей період записів немає</strong>Завершені тренування з’являться тут.</div>');
 }
 export function chart(points,metric){
  if(!points.length)return '<div class="empty"><strong>Графік поки недоступний</strong>За цей період ще немає виконаних робочих підходів для обраної вправи'+(metric==='e1rm'?' (оцінка ≈1RM рахується лише для підходів на 1–12 повторень із додатковою вагою понад 0 кг)':'')+'.</div>';
@@ -91,78 +74,21 @@ export function chart(points,metric){
  return `<div class="card chart-card"><div class="row chart-summary"><div><div class="tiny">${metric==='volume'?'Найбільший обсяг за тренування':metric==='reps'?'Найбільше повторень':metric==='e1rm'?'Оцінка максимуму на 1 повторення (≈1RM)':'Найбільша робоча вага'}</div><div class="big-number lime">${formatNumber(max)} ${unit}</div></div><span class="tiny">${points.length} ${plural(points.length,['тренування','тренування','тренувань'])}</span></div>${points.length===1?'<p class="helper">Показано перше тренування з цією вправою. Заверши ще одне заняття, щоб побачити лінію динаміки.</p>':''}<svg class="chart" viewBox="0 0 340 178" role="img" aria-label="${metric==='volume'?'Обсяг':metric==='reps'?'Повторення':metric==='e1rm'?'Оцінка 1RM':'Вага'} за ${points.length} тренувань"><defs><linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--lime)" stop-opacity=".22"/><stop offset="1" stop-color="var(--lime)" stop-opacity="0"/></linearGradient></defs><line x1="45" y1="35" x2="305" y2="35"/><line x1="45" y1="90" x2="305" y2="90"/><line x1="45" y1="145" x2="305" y2="145"/><text x="39" y="39" text-anchor="end">${formatNumber(max)}</text><text x="39" y="150" text-anchor="end">0</text>${marks.length>1?`<polygon class="area" points="${marks[0].x},145 ${marks.map(p=>`${p.x},${p.y}`).join(' ')} ${marks.at(-1).x},145"/>`:''}<polyline points="${marks.map(p=>`${p.x},${p.y}`).join(' ')}"/>${marks.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="4"><title>${fmtDate(p.date)}: ${formatNumber(p.value)} ${unit}</title></circle>`).join('')}</svg><div class="tiny">${fmtDate(points[0].date)} — ${fmtDate(points.at(-1).date)}</div><details class="chart-data"><summary>Значення за датами</summary><table><thead><tr><th>Дата</th><th>${metric==='volume'?'Обсяг':metric==='reps'?'Повторення':metric==='e1rm'?'Оцінка ≈1RM':'Вага'}</th></tr></thead><tbody>${points.map(p=>`<tr><td>${fmtDate(p.date)}</td><td>${formatNumber(p.value)} ${unit}</td></tr>`).join('')}</tbody></table></details></div>`;
 }
 function progressView(state,ui){
- const history=filteredHistory(state.history,ui.progressDays),ids=[...new Set(state.history.flatMap(w=>w.exercises.map(e=>e.exerciseId)))],id=ids.includes(ui.exerciseId)?ui.exerciseId:ids[0];
- const best=records(history,id);
- const compLine=id?exerciseComparison(history,id,ui.metric):'';
- return `<h1 class="page-title">Прогрес</h1><p class="page-intro">Як змінюються твої результати.</p>
- <div class="filter-row">${periodSelect('progress-period',ui.progressDays)}</div>
- ${progressSummaryBar(state,history)}
- ${ids.length?`<section class="exercise-progress-section">
-  <div class="labels"><label for="progress-ex">Вправа</label><select id="progress-ex" class="field">${ids.map(key=>`<option value="${esc(key)}" ${key===id?'selected':''}>${esc(state.catalog.find(e=>e.id===key)?.name||'Вправа')}</option>`).join('')}</select></div>
-  <div class="segmented" aria-label="Показник графіка">${[['weight','Вага'],['volume','Обсяг'],['reps','Повт.'],['e1rm','≈1RM']].map(([key,label])=>button('chart-metric',label,`data-metric="${key}" aria-pressed="${ui.metric===key}"`,ui.metric===key?'btn sm':'btn alt sm')).join('')}</div>
-  ${compLine?`<p class="progress-comparison">${esc(compLine)}</p>`:''}
-  ${chart(series(history,id,ui.metric),ui.metric)}
-  ${ui.metric==='e1rm'?'<p class="helper">≈1RM — оцінка максимуму на 1 повторення за формулою Еплі (для 1–12 повторень із вагою понад 0 кг). Це орієнтир прогресу, а не виміряний рекорд.</p>':''}
-  <div class="section-title"><h2>Рекорд у вправі</h2></div>
-  <div class="record-list"><div><span>Рекорд ваги</span><strong>${formatNumber(best.weight)} кг</strong></div><div><span>Рекорд повторень</span><strong>${best.reps}</strong></div><div><span>Рекорд обсягу підходу</span><strong>${formatNumber(best.bestSetVolume)} кг</strong></div></div>
- </section>`:'<div class="empty"><strong>Графік зʼявиться після першого тренування</strong>Заверши заняття, щоб відстежувати робочі ваги, обсяг і рекорди.</div>'}
- ${progressDetailsSection(state,history,ui.muscleGroup,Boolean(ui.progressDetailsOpen))}`;
+ const history=filteredHistory(state.history,ui.progressDays),ids=[...new Set(state.history.flatMap(w=>w.exercises.map(e=>e.exerciseId)))],id=ids.includes(ui.exerciseId)?ui.exerciseId:ids[0],tab=ui.progressTab||'muscles',facts=historyFacts(history),compLine=id?exerciseComparison(history,id,ui.metric):'';
+ const tabs=[['muscles','М’язи'],['chart','Графік'],['records','Рекорди ('+facts.best.size+')']];
+ let panel='';
+ if(tab==='muscles')panel=muscleProgressPanel(state,history,ui.muscleGroup);
+ if(tab==='chart')panel=ids.length?'<section class="exercise-progress-section"><div class="labels"><label for="progress-ex">Вправа</label><select id="progress-ex" class="field">'+ids.map(key=>'<option value="'+esc(key)+'" '+(key===id?'selected':'')+'>'+esc(state.catalog.find(e=>e.id===key)?.name||'Вправа')+'</option>').join('')+'</select></div><div class="segmented" aria-label="Показник графіка">'+[['weight','Вага'],['volume','Обсяг'],['reps','Повт.'],['e1rm','≈1RM']].map(([key,label])=>button('chart-metric',label,'data-metric="'+key+'" aria-pressed="'+(ui.metric===key)+'"','btn sm '+(ui.metric===key?'':'alt'))).join('')+'</div>'+(compLine?'<p class="progress-comparison">'+esc(compLine)+'</p>':'')+chart(series(history,id,ui.metric),ui.metric)+(ui.metric==='e1rm'?'<p class="helper">≈1RM — оцінка за формулою Еплі для 1–12 повторень із вагою понад 0 кг. Це орієнтир, а не виміряний максимум.</p>':'')+'</section>':'<div class="empty"><strong>Графік з’явиться після першого тренування</strong></div>';
+ if(tab==='records')panel='<section class="card records-panel"><h2 class="section-heading">Найкращі результати за період</h2>'+[...facts.best.values()].map(r=>'<div class="personal-record-row"><span><strong>'+esc(r.name)+'</strong><small>'+shortDate(r.date)+'</small></span><span class="pr-badge">'+icon('trophy')+formatNumber(r.set.weight)+' кг × '+r.set.reps+'</span></div>').join('')+(!facts.best.size?'<p class="helper">Ще немає записаних підходів.</p>':'')+'</section>';
+ return '<h1 class="page-title">Прогрес</h1>'+progressSummaryBar(state,history)+'<div class="filter-row">'+periodSelect('progress-period',ui.progressDays)+'</div><div class="segmented progress-tabs" role="tablist" aria-label="Розділ прогресу">'+tabs.map(([key,label])=>button('progress-tab',label,'id="progress-tab-'+key+'" data-progress-tab="'+key+'" role="tab" aria-selected="'+(tab===key)+'" aria-controls="progress-panel"','btn sm '+(tab===key?'':'alt'))).join('')+'</div><div id="progress-panel" role="tabpanel" aria-labelledby="progress-tab-'+tab+'">'+panel+'</div>';
 }
+export function muscleGroupsForm(state){return button('close-modal','×','aria-label="Закрити"','modal-close')+'<h2>Групи м’язів</h2><p class="helper">Призначення зберігається в каталозі для поточних та майбутніх занять.</p><div class="muscle-config-list">'+state.catalog.map(e=>button('rename-exercise',esc(e.name),'data-id="'+esc(e.id)+'"','text-btn')).join('')+'</div>';}
+export function exerciseHistoryForm(state,e){return button('close-modal','×','aria-label="Закрити"','modal-close')+'<h2>'+esc(e.name)+'</h2>'+chart(series(filteredHistory(state.history),e.exerciseId,'weight'),'weight')+'<div class="btn-column">'+button('exercise-config','Обладнання та крок ваги','data-id="'+esc(e.id)+'"','btn alt block')+button('set-options','Типи та кількість підходів','data-id="'+esc(e.id)+'"','btn alt block')+'</div>';}
+
 function settingsView(state,ui){
- const standalone=window.matchMedia('(display-mode: standalone)').matches||navigator.standalone;
- return `<h1 class="page-title">Параметри</h1><p class="page-intro">Тренування, дані й робота застосунку.</p>
-
- <div class="section-title"><h2>Тренування</h2></div>
- <section class="card">
-  <h3 class="section-heading">Відпочинок та екран</h3>
-  <div class="rest-settings-grid">
-   <label class="filter-label" for="rest-duration">Між робочими підходами<select id="rest-duration" class="field">${REST_OPTIONS.map(n=>`<option value="${n}" ${state.restSeconds===n?'selected':''}>${shortRest(n)}</option>`).join('')}</select></label>
-   <label class="filter-label" for="warmup-rest-duration">Після розминки<select id="warmup-rest-duration" class="field">${REST_OPTIONS.map(n=>`<option value="${n}" ${state.warmupRestSeconds===n?"selected":""}>${shortRest(n)}</option>`).join('')}</select></label>
-   <label class="filter-label" for="exercise-rest-duration">Між вправами<select id="exercise-rest-duration" class="field">${REST_OPTIONS.map(n=>`<option value="${n}" ${state.exerciseRestSeconds===n?'selected':''}>${shortRest(n)}</option>`).join('')}</select></label>
-  </div>
-  <p class="helper">Відпочинок починається після виконаного підходу.</p>
-  <div class="divider"></div>
-  <label class="toggle-setting"><span>Не гасити екран під час тренування</span><input id="keep-awake" type="checkbox" ${state.keepAwake?'checked':''}></label>
-  <p class="helper" id="wakeStatus">Працює на екрані активного тренування.</p>
- </section>
-
- <details class="card catalog-settings-card">
-  <summary>Вправи та обладнання<span>${state.catalog.length}</span></summary>
-  <p class="helper">Крок ваги, гантелі, тренажер і група м’язів для кожної вправи.</p>
-  ${state.catalog.length?`<div class="catalog-settings-list">${state.catalog.map(e=>`<div class="editor-item"><span><strong>${esc(e.name)}</strong><small class="config-caption">${e.weightStep?`Крок +${formatNumber(e.weightStep)} кг`:"Крок ваги не вказано"} · ${e.weightBasis==="one-dumbbell"?"вага 1 гантелі":"загальна вага"}</small></span>${button('rename-exercise','✎',`data-id="${esc(e.id)}" aria-label="Налаштувати ${esc(e.name)}"`)}</div>`).join('')}</div>`:'<p class="subtle">Вправи зʼявляться після додавання до програми.</p>'}
- </details>
-
- <div class="section-title"><h2>Сповіщення</h2></div>
- ${notificationSettings(ui)}
-
- <div class="section-title"><h2>Дані та резервні копії</h2></div>
- <section class="card">
-  <h3 class="section-heading">Резервна копія та експорт</h3>
-  <p class="subtle">Усі тренування зберігаються локально на пристрої. Зберігай JSON-копію у Файли або iCloud Drive.</p>
-  <p class="tiny">Остання резервна копія: <strong>${state.lastBackupAt?fmtDate(state.lastBackupAt):'ще не створена'}</strong></p>
-  <div class="btn-row">${button('export','Зберегти резервну копію','','btn')}${button('import','Відновити з JSON','','btn alt')}</div>
-  <div class="btn-row">${button('export-csv','Експортувати історію в CSV',state.history.length?'':'disabled','btn alt sm')}${button('share-program','Поділитися програмою',state.templates.some(plan=>plan.exercises.length)?'':'disabled','btn alt sm')}</div>
-  <input id="backup-file" type="file" accept="application/json,.json" hidden>
-  <div class="divider"></div>
-  <p class="tiny" id="storageStatus">${esc(ui.storageStatus)}</p>
-  ${button('persist-storage','Запросити постійне зберігання','','btn alt block sm')}
-  <p class="helper">Просить браузер зберігати дані постійно. Рішення залежить від браузера; резервна копія все одно потрібна.</p>
- </section>
-
- <div class="section-title"><h2>Про застосунок</h2></div>
- <section class="card">
-  <h3 class="section-heading">СЕТ · Офлайн-режим</h3>
-  ${standalone?'<p class="subtle">Відкрито як встановлений застосунок на головному екрані.</p>':'<p class="subtle">На iPhone відкрий у Safari → Поділитися → На початковий екран.</p>'}
-  <p class="tiny" id="offlineStatus">${esc(ui.offlineStatus)}</p>
-  ${button('check-offline','Перевірити офлайн-готовність','','btn alt block sm')}
-  <p class="helper">Версія 2.2 · Персональний трекер без облікових записів та реклами.</p>
- </section>
-
- <section class="card danger-zone-card">
-  <h3 class="section-heading danger-text">Небезпечна зона</h3>
-  <p class="helper">Повне видалення всіх планів та історії тренувань на цьому пристрої. Перед очищенням автоматично завантажиться резервна копія.</p>
-  ${button('reset','Очистити всі дані','','btn danger block')}
- </section>`;
+ const row=(image,title,sub,control)=>'<label class="setting-row"><span class="icon-badge">'+icon(image)+'</span><span class="setting-copy"><strong>'+title+'</strong><small>'+sub+'</small></span>'+control+'</label>';
+ const select=(id,value)=>'<select id="'+id+'" class="field">'+REST_OPTIONS.map(n=>'<option value="'+n+'" '+(value===n?'selected':'')+'>'+shortRest(n)+'</option>').join('')+'</select>';
+ return '<h1 class="page-title">Параметри</h1><section class="card settings-workout"><h2 class="section-heading">Під час тренування</h2><div class="rest-settings-grid">'+row('clock','Між робочими підходами','Автостарт після підходу',select('rest-duration',state.restSeconds))+row('fire','Після розминки','Окрема тривалість паузи',select('warmup-rest-duration',state.warmupRestSeconds))+row('dumbbell','Між вправами','Після останнього підходу',select('exercise-rest-duration',state.exerciseRestSeconds))+'</div>'+row('shield','Не гасити екран','Під час активного тренування','<input id="keep-awake" type="checkbox" '+(state.keepAwake?'checked':'')+'>')+'<p class="helper" id="wakeStatus">Працює на екрані активного тренування.</p></section><details class="card catalog-settings-card"><summary><span class="icon-badge">'+icon('settings')+'</span><span class="setting-copy"><strong>Вправи та обладнання</strong><small>Крок ваги та групи м’язів</small></span><span>'+state.catalog.length+'</span></summary><div class="catalog-settings-list">'+state.catalog.map(e=>'<div class="editor-item"><span><strong>'+esc(e.name)+'</strong><small class="config-caption">'+(e.weightStep?'Крок +'+formatNumber(e.weightStep)+' кг':'Крок не вказано')+' · '+(e.weightBasis==='one-dumbbell'?'вага 1 гантелі':'загальна вага')+'</small></span>'+button('rename-exercise','✎','data-id="'+esc(e.id)+'" aria-label="Налаштувати '+esc(e.name)+'"')+'</div>').join('')+'</div></details><div class="section-title"><h2>Сповіщення</h2></div>'+notificationSettings(ui)+'<section class="card backup-card"><div class="row"><span class="icon-badge">'+icon('refresh')+'</span><div class="setting-copy"><h2 class="section-heading">Резервна копія та дані</h2><p class="tiny">Остання копія: '+(state.lastBackupAt?fmtDate(state.lastBackupAt):'ще не створена')+'</p></div></div><div class="backup-actions">'+button('export','Експорт JSON','','btn alt')+button('import','Імпорт копії','','btn alt')+'</div><input id="backup-file" type="file" accept="application/json,.json" hidden><details class="data-more"><summary>Інші дії з даними</summary><div class="btn-column">'+button('export-csv','Історія в CSV',state.history.length?'':'disabled','btn alt block')+button('share-program','Поділитися програмою',state.templates.length?'':'disabled','btn alt block')+button('persist-storage','Запросити постійне зберігання','','btn alt block sm')+'</div><p class="tiny" id="storageStatus">'+esc(ui.storageStatus)+'</p></details><p class="helper">Локальні дані на цьому пристрої. Зберігай JSON-копію у Файли.</p></section><section class="card app-info-card"><div class="row"><span class="icon-badge">'+icon('check-circle')+'</span><div class="setting-copy"><h2 class="section-heading">СЕТ · Офлайн-режим</h2><p class="tiny" id="offlineStatus">'+esc(ui.offlineStatus)+'</p></div></div>'+button('check-offline','Перевірити офлайн-готовність','','btn alt block sm')+'<p class="helper">Версія 2.3 · Linear Precision</p></section><section class="card danger-zone-card"><h2 class="section-heading danger-text">Небезпечна зона</h2><p class="helper">Повне видалення планів та історії з цього пристрою. Перед очищенням завантажиться резервна копія.</p>'+button('reset','Очистити всі дані','','btn danger block')+'</section>';
 }
 export function templateForm(draft,state){
  return `${button('close-modal','×','aria-label="Закрити редактор"','modal-close')}

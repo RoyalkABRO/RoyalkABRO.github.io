@@ -1,7 +1,9 @@
 import {focusExercise,upcomingExercise,restDestination,equipmentText} from './workout-tools.js';
-import {dashboard,workoutSummary,nextSet} from './dashboard.js';
+import {dashboard,workoutSummary,nextSet,historyFacts} from './dashboard.js';
 import {icon} from './icons.js';
-import {DAYS} from './model.js';
+import {DAYS,compactRepTarget} from './model.js';
+import {dayMuscles} from './muscles.js';
+import {volume} from './stats.js';
 import {setLabel,comparison} from './progression.js';
 import {onlyStarterPlans,missingProgramDays} from './programs.js';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -25,25 +27,13 @@ export function homeDesign(state,preset=''){
   </section>
   <p class="data-notice">Усі тренування зберігаються локально на цьому пристрої. У налаштуваннях завжди можна зберегти резервну копію JSON.</p>`;
  }
- const t=populated.slice().sort((a,b)=>(a.day-new Date().getDay()+7)%7-(b.day-new Date().getDay()+7)%7)[0]||state.templates[0];
- const other=state.templates.filter(p=>p.id!==t?.id);
- const isToday=t&&t.day===new Date().getDay();
- const ctaLabel=isToday?'Почати тренування':'Почати зараз';
- const statusBadge=isToday?`${icon('check')} Сьогодні за планом`:`${icon('calendar')} Найближче тренування`;
- const nextScheduleNote=t&&!isToday?`<p class="schedule-note">Наступне за планом — <strong>${DAY_ACCUSATIVE[t.day]}</strong>.</p>`:'';
- return `<section class="home-intro"><div><p class="subtle">${new Date().toLocaleDateString('uk-UA',{weekday:'long',day:'numeric',month:'long'})}</p><h1 class="page-title">Тренування</h1></div>${d.streak?`<span class="streak-pill">${d.streak} тиж. поспіль</span>`:''}</section>
- ${active?`<section class="card resume today-hero"><div class="row"><span class="plan-badge">${icon('dumbbell')} Активне заняття</span></div><h2>${esc(active.title)}</h2><p class="subtle">${active.exercises.length} вправ · ${active.exercises.reduce((n,e)=>n+e.sets.filter(s=>s.done).length,0)} виконаних підходів</p>${action('resume',icon('play')+'<span>Продовжити</span>','','btn block')}</section>`:''}
- ${!active&&t?`<section class="card hero today-hero template-card"><div class="row"><span class="plan-badge">${statusBadge}</span><span class="subtle">${DAYS[t.day]}</span></div><div class="row featured-title"><h2>${esc(t.name)}</h2></div>${nextScheduleNote}<p class="subtle">${t.exercises.length} вправ · ${t.exercises.reduce((n,e)=>n+e.targetSets,0)} робочих підходів</p><ul class="exercise-preview">${t.exercises.slice(0,3).map(e=>`<li>${esc(e.name)}</li>`).join('')}${t.exercises.length>3?`<li class="subtle">І ще ${t.exercises.length-3}</li>`:''}</ul>${action('start',icon('play')+'<span>'+ctaLabel+'</span>',`data-id="${esc(t.id)}" ${t.exercises.length?'':'disabled'}`,'btn block')}${!t.exercises.length?`<div class="btn-row">${action('edit-template','Додати вправи до плану',`data-id="${esc(t.id)}"`,'btn alt block')}</div>`:''}</section>`:''}
- <section class="card week-card"><div class="row"><h2 class="section-heading">Цього тижня</h2><span class="subtle">${d.days.filter(x=>x.count).length} із 7 днів</span></div><div class="week-grid">${d.days.map((x,i)=>`<div class="week-day"><span>${['Пн','Вт','Ср','Чт','Пт','Сб','Нд'][i]}</span><span class="week-dot ${x.count?'trained':''} ${x.today?'is-today':''}" aria-label="${x.key}: ${x.count?'виконано тренування':x.planned?'заплановано':'вільний день'}${x.today?', сьогодні':''}">${x.count?icon('check'):x.today?'●':x.planned?'·':''}</span></div>`).join('')}</div></section>
- <section class="card my-program-section"><div class="section-title"><h2>Моя програма</h2></div>
-  ${state.templates.length?`<div class="program-rows">${state.templates.map(p=>`<div class="compact-plan"><span class="day-tile">${DAYS[p.day].slice(0,2)}</span><div class="template-info"><strong>${esc(p.name)}</strong><p class="tiny">${DAYS[p.day]} · ${p.exercises.length} вправ · ${p.exercises.reduce((n,e)=>n+e.targetSets,0)} підходів</p></div><div class="controls">${action('edit-template',icon('edit'),`data-id="${esc(p.id)}" aria-label="Редагувати ${esc(p.name)}"`,'icon-btn')}${!active&&p.id!==t?.id&&p.exercises.length?action('start',icon('play'),`data-id="${esc(p.id)}" aria-label="Почати ${esc(p.name)}"`,'icon-btn play-row-btn'):''}</div></div>`).join('')}</div>`:'<p class="subtle">Планів ще немає.</p>'}
-  <div class="btn-row program-manage-actions">
-   ${action('new-template',icon('plus')+'<span>Новий день</span>','','btn alt sm')}
-   ${missingProgramDays(state).length?action('preview-program','Готова програма','','btn alt sm'):''}
-   ${state.templates.some(p=>p.exercises.length)?action('share-program',icon('share')+'<span>Поділитися</span>','','btn alt sm'):''}
-  </div>
- </section>
- <p class="data-notice">Локальне збереження на пристрої. Резервна копія — у налаштуваннях.</p>`;
+ const t=d.featured,facts=historyFacts(state.history),last=t?facts.plans.get(t.id):null;
+ const dayCode=['НД','ПН','ВТ','СР','ЧТ','ПТ','СБ'];
+ const preview=plan=>plan.exercises.slice(0,3).map((e,i)=>{const prior=facts.previous.get(e.exerciseId)?.at(-1);return `<li><span>${i+1}. ${esc(e.name)}</span><span class="preview-target"><strong>${prior?num(prior.weight)+' кг × '+prior.reps:'Ще немає ваги'}</strong> <small>(${e.targetSets}×${compactRepTarget(e)})</small></span></li>`;}).join('');
+ return `<section class="home-intro"><div><p class="subtle">${new Date().toLocaleDateString('uk-UA',{weekday:'long',day:'numeric',month:'long'})}</p><h1 class="page-title">Тренування</h1></div>${d.streak?`<span class="streak-pill pr-badge">${icon('fire')}${d.streak} тиж. поспіль</span>`:''}</section>
+ ${active?`<section class="card resume today-hero"><span class="plan-badge">${icon('dumbbell')} Активне заняття</span><h2>${esc(active.title)}</h2><p class="subtle">${active.exercises.length} вправ · ${active.exercises.reduce((n,e)=>n+e.sets.filter(s=>s.done).length,0)} виконаних підходів</p>${action('resume',icon('play')+'<span>Продовжити</span>','','btn block')}</section>`:t?`<section class="card hero today-hero template-card"><div class="hero-top"><span class="plan-badge">${t.day===new Date().getDay()?'Сьогодні за планом':'Найближче тренування'}</span><span class="tiny">${t.exercises.length} вправ · ${t.exercises.reduce((n,e)=>n+e.targetSets,0)} підходів</span></div><h2>${esc(t.name)}</h2><div class="day-tags">${dayMuscles(t.exercises,state.catalog).map(name=>`<span class="muscle-tag">${icon('dumbbell')}${name}</span>`).join('')}<span class="muted-tag">Минулий: ${last?num(volume(last)/1000)+' т':'ще немає даних'}</span></div><ul class="exercise-preview">${preview(t)}</ul>${action('start',icon('play')+'<span>Почати зараз</span>',`data-id="${esc(t.id)}" ${t.exercises.length?'':'disabled'}`,'btn block')}${!t.exercises.length?action('edit-template','Додати вправи до плану',`data-id="${esc(t.id)}"`,'btn alt block'):''}</section>`:''}
+ <section class="card week-card"><div class="row"><h2 class="section-heading">Цього тижня</h2><span class="tiny">${d.days.filter(x=>x.count).length} із 7 днів</span></div><div class="week-grid">${d.days.map((x,i)=>`<div class="week-day"><span>${['Пн','Вт','Ср','Чт','Пт','Сб','Нд'][i]}</span><span class="week-dot ${x.count?'trained':''} ${x.today?'is-today':''}" aria-label="${x.key}: ${x.count?'виконано тренування':x.planned?'заплановано':'вільний день'}${x.today?', сьогодні':''}">${x.count?icon('check'):x.planned?icon('play'):''}</span></div>`).join('')}</div></section>
+ <section class="my-program-section"><div class="section-title"><h2>Моя програма</h2><div class="program-heading-actions">${action('new-template',icon('plus')+'День','','text-btn')}${action('share-program',icon('share')+'Поділитися',state.templates.length?'':'disabled','text-btn')}</div></div><div class="program-rows">${state.templates.map(p=>{const previous=facts.plans.get(p.id);return `<div class="compact-plan"><span class="day-tile">${dayCode[p.day]}</span><div class="template-info"><strong>${esc(p.name)}</strong><p class="tiny">${p.exercises.length} вправ · ${p.exercises.reduce((n,e)=>n+e.targetSets,0)} підходів${previous?' · '+num(volume(previous)/1000)+' т':''}</p></div><div class="controls">${action('edit-template',icon('edit'),`data-id="${esc(p.id)}" aria-label="Редагувати ${esc(p.name)}"`,'icon-btn')}${!active&&p.exercises.length?action('start',icon('play'),`data-id="${esc(p.id)}" aria-label="Почати ${esc(p.name)}"`,'icon-btn play-row-btn'):''}</div></div>`;}).join('')}</div>${missingProgramDays(state).length?action('preview-program','Додати готову програму','','text-btn'):''}</section><p class="data-notice">Локальне збереження на пристрої. Резервна копія — у параметрах.</p>`;
 }
 export function completionDesign(state,w){
  const s=workoutSummary(state.history,w),best=s.prs.slice().sort((a,b)=>b.rm-a.rm)[0];

@@ -1,5 +1,7 @@
 export const MUSCLE_GROUPS=[['chest','Груди'],['back','Спина'],['shoulders','Плечі'],['biceps','Біцепс'],['triceps','Трицепс'],['quads','Передня поверхня стегна'],['hamstrings','Задня поверхня стегна'],['glutes','Сідниці'],['calves','Ікри'],['core','Прес']];
 export const MUSCLE_IDS=MUSCLE_GROUPS.map(([id])=>id);
+export function muscleLabel(e,catalog=[]){const id=exerciseMuscle(e,catalog);return MUSCLE_GROUPS.find(g=>g[0]===id)?.[1]||'Групу не вказано';}
+export function dayMuscles(exercises,catalog=[]){const labels=new Set();for(const e of exercises){const id=exerciseMuscle(e,catalog);if(!id)continue;labels.add(['quads','hamstrings','glutes','calves'].includes(id)?'Ноги':['biceps','triceps'].includes(id)?'Руки':MUSCLE_GROUPS.find(g=>g[0]===id)[1]);}return [...labels];}
 const inferCache=new Map();
 export function inferMuscle(name){
  const key=String(name||'');

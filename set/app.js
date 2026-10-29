@@ -1,7 +1,7 @@
 import {PushNotifications,classifyPushState} from './js/push-notifications.js';
 import {muscleField} from './js/muscles.js';
 import {exerciseOrderForm,bindExerciseOrder,reorderExercises} from './js/exercise-order.js';
-import {compactTiming,setOptionsForm,finishSectionView,workoutMenuForm} from './js/simple-views.js';
+import {compactTiming,setOptionsForm,finishSectionView,workoutMenuForm,workoutNoteForm,restBarView} from './js/simple-views.js';
 import {focusExercise,upcomingExercise,restDestination,replaceExercise,applyWarmup,warmupSuggestion,forecastSession,optionalSets,restAfterSet} from './js/workout-tools.js';
 import {equipmentFields,replacementForm,warmupForm,warmupRows,extrasForm} from './js/workout-tools-views.js';
 import {restDesign} from './js/design-views.js';
@@ -11,7 +11,7 @@ import {historyCSV,workoutImage} from './js/exports.js';
 import {WorkoutWakeLock} from './js/wake-lock.js';
 import {Repository} from './js/storage.js';
 import {fresh,normalize,clone,uid,getOrCreateExercise,validSet,startSession,finishSession,moveItem} from './js/model.js';
-import {renderView,renderNavigation,renderFocusedExercise,goalForm,shareProgramForm,templateForm,historyDetail,historyEditor,catalogList,esc,button,programPreview} from './js/views.js';
+import {renderView,renderNavigation,renderFocusedExercise,goalForm,shareProgramForm,templateForm,historyDetail,historyEditor,catalogList,esc,button,programPreview,exerciseHistoryForm,muscleGroupsForm} from './js/views.js';
 import {programText} from './js/share.js';
 import {addPersonalProgram,onlyStarterPlans} from './js/programs.js';
 import {remaining,formatClock,unlockSound,beep} from './js/timer.js';
@@ -81,6 +81,8 @@ function updateWorkoutProgress(){
   rail.setAttribute('aria-valuenow',String(done));
   rail.setAttribute('aria-valuetext',done+' з '+total+' робочих підходів · '+percent+'%');
   rail.querySelector('.workout-progress-percent').textContent=percent+'%';
+  const exercises=state?.session?.exercises||[],focused=focusExercise(state?.session,ui.focusId);
+  rail.querySelector('.workout-progress-segments').innerHTML=exercises.map(e=>{const work=workingSets(e),done=work.filter(s=>s.done).length,ratio=work.length?done/work.length:0;return '<span class="rail-segment '+(ratio===1?'is-done':'')+' '+(e.id===focused?.id?'current':'')+'" title="'+esc(e.name)+': '+done+'/'+work.length+'"><i style="height:'+ratio*100+'%"></i></span>';}).join('');
   const summary=document.getElementById('workoutProgressSummary');
   if(summary)summary.textContent=total?done+' / '+total+' робочих підходів':'Додай робочі підходи';
 }
@@ -129,7 +131,8 @@ function updateExerciseCardDOM(){
       if(old.outerHTML!==fresh.outerHTML)old.replaceWith(fresh);
     }else if(old)old.remove();else if(fresh)currentCard.append(fresh);
   };
-  for(const selector of ['.exercise-meta','.goal-summary-box','.first-set-coachmark','.quiet-effort','.next-exercise-callout'])replaceSection(selector);
+  for(const selector of ['.exercise-meta','.exercise-prior','.goal-summary-box','.first-set-coachmark','.quiet-effort'])replaceSection(selector);
+  const dock=document.getElementById('restSlot');if(dock){const t=document.createElement('template');t.innerHTML=restBarView(state,focused.id);const old=dock.querySelector('.next-exercise-callout'),next=t.content.querySelector('.next-exercise-callout');if(old&&next)old.replaceWith(next);else if(old)old.remove();else if(next)dock.append(next);}
   const replaceButton=currentCard.querySelector('[data-action="replace-exercise"]');
   if(replaceButton)replaceButton.disabled=nextCard.querySelector('[data-action="replace-exercise"]').disabled;
   updateFinishButtonDOM();
@@ -188,7 +191,7 @@ function commit(mutator,{redraw=true,cardOnly=false,preserve=false,undoLabel=nul
   queue=task.catch(()=>{});return task;
 }
 
-function openModal(html,mode){modalContent.innerHTML=html;modalMode=mode;if(!modal.open)modal.showModal();}
+function openModal(html,mode){modal.classList.toggle('action-sheet',mode==='workout-menu');modalContent.innerHTML=html;modalMode=mode;if(!modal.open)modal.showModal();}
 function syncDraft(){
   if(!draft)return;const name=document.getElementById('template-name');if(!name)return;
   draft.name=name.value;draft.day=Number(document.getElementById('template-day').value);draft.addName=document.getElementById('template-add-name').value;
@@ -282,8 +285,16 @@ function showSetFieldError(exId,setId,setObj){
 
 async function handleAction(b){
   const action=b.dataset.action,id=b.dataset.id;unlockSound();
-  if(modalMode==='workout-menu'&&action!=='close-modal')closeModal(true);
+  if(modalMode==='workout-menu'&&!['close-modal','workout-menu-tab'].includes(action))closeModal(true);
   if(action==='workout-menu'){await queue;const e=id?sessionExercise(state,id):null;openModal(workoutMenuForm(state,e),'workout-menu');return;}
+  if(action==='workout-menu-tab'){const e=id?sessionExercise(state,id):null;openModal(workoutMenuForm(state,e,b.dataset.menuTab),'workout-menu');return;}
+  if(action==='workout-note'){await queue;openModal(workoutNoteForm(state,sessionExercise(state,id)),'workout-note');return;}
+  if(action==='exercise-history'){await queue;openModal(exerciseHistoryForm(state,sessionExercise(state,id)),'exercise-history');return;}
+  if(action==='muscle-groups'){openModal(muscleGroupsForm(state),'muscle-groups');return;}
+  if(action==='progress-tab'){ui.progressTab=b.dataset.progressTab;render();return;}
+  if(action==='history-more'){ui.historyLimit=(ui.historyLimit||50)+50;render();return;}
+  if(action==='session-finish-menu'){openModal(button('close-modal',icon('close'),'aria-label="Закрити"','modal-close')+'<h2>Завершення заняття</h2><div class="btn-column">'+button('finish-workout','Зберегти та завершити','','btn block')+button('cancel-workout','Скасувати заняття','','btn danger block')+button('easy-day',state.session.easy?'Звичайне навантаження':'Сьогодні легше','','btn alt block')+button('review-extras','Переглянути додаткові підходи','','btn alt block')+'</div>','session-finish');return;}
+  if(action==='plate-calculator'){const e=sessionExercise(state,id),set=e.sets.find(s=>!s.done)||e.sets.at(-1);openModal(button('close-modal',icon('close'),'aria-label="Закрити"','modal-close')+'<h2>Калькулятор млинців</h2><label class="filter-label">Загальна вага, кг<input id="plateWeight" class="field" type="number" inputmode="decimal" min="0" max="10000" step="any" value="'+esc(set?.weight||20)+'"></label><label class="filter-label">Вага грифа, кг<input id="plateBar" class="field" type="number" inputmode="decimal" min="1" max="100" step="any" value="20"></label><p id="plateResult" data-weight="'+esc(set?.weight||20)+'"></p>','plate-calculator');updatePlates();return;}
   if(action==='workout-home'){await queue;ui.tab='home';render();window.scrollTo(0,0);return;}
   if(action.startsWith('push-')){if(b.dataset.busy)return;b.dataset.busy='1';b.disabled=true;try{
     if(action==='push-enable'){const code=document.getElementById('pushPairingCode')?.value||'';await pushNotifications.enable(code);const field=document.getElementById('pushPairingCode');if(field)field.value='';await queue;syncPush();}
@@ -294,7 +305,7 @@ async function handleAction(b){
 
   if(action==='tab'){await queue;if(window.scrollY)window.scrollTo(0,0);ui.tab=b.dataset.tab;render();if(window.scrollY)window.scrollTo(0,0);return;}
   if(action==='resume'){if(window.scrollY)window.scrollTo(0,0);ui.tab='workout';render();return;}
-  if(action==='history-mode'){ui.historyMode=b.dataset.mode;ui.historyDate=null;render();return;}
+  if(action==='history-mode'){ui.historyMode=b.dataset.mode;ui.historyDate=null;ui.historyLimit=50;render();return;}
   if(action==='history-day'){ui.historyDate=ui.historyDate===b.dataset.date?null:b.dataset.date;render();return;}
   if(action==='calendar-month'){ui.historyMode='calendar';ui.historyDate=null;const base=ui.calendarMonth?new Date(ui.calendarMonth+'-01T12:00:00'):new Date();const month=new Date(base.getFullYear(),base.getMonth()+Number(b.dataset.direction),1);ui.calendarMonth=month.getFullYear()+'-'+String(month.getMonth()+1).padStart(2,'0');render();return;}
   if(action==='export-csv'){await queue;download(historyCSV(state.history),'set-history-'+new Date().toISOString().slice(0,10)+'.csv','text/csv;charset=utf-8');return;}
@@ -421,6 +432,12 @@ async function handleAction(b){
 }
 
 document.addEventListener('click',event=>{const b=event.target.closest('[data-action]');if(b&&!b.disabled)handleAction(b).catch(showError);});
+document.addEventListener('keydown',event=>{
+ const tab=event.target.closest('.action-tabs [role="tab"],.progress-tabs [role="tab"]');
+ if(!tab||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+ const tabs=[...tab.parentElement.querySelectorAll('[role="tab"]')],i=tabs.indexOf(tab),next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(i+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length,id=tabs[next].id;
+ event.preventDefault();tabs[next].click();document.getElementById(id)?.focus();
+});
 
 function saveNoteInput(x){
   if(!x.matches('[data-note-ex],[data-workout-note]'))return false;
@@ -458,7 +475,7 @@ app.addEventListener('change',event=>{
   if(x.id==='rest-duration')commit(s=>{s.restSeconds=Number(x.value);},{redraw:false,sessionOnly:true}).catch(()=>{});
   if(x.id==='progress-ex'){ui.exerciseId=x.value;render();}
   if(x.id==='progress-period'){ui.progressDays=Number(x.value);render();}
-  if(x.id==='history-period'){ui.historyDays=Number(x.value);ui.historyDate=null;render();}
+  if(x.id==='history-period'){ui.historyDays=Number(x.value);ui.historyDate=null;ui.historyLimit=50;render();}
   if(x.id==='backup-file')importBackup(x.files[0]);
 });
 app.addEventListener('toggle',event=>{
@@ -480,7 +497,7 @@ modal.addEventListener('submit',event=>{event.preventDefault();const form=event.
 })().catch(showError);});
 
 function updatePlates(){const result=document.getElementById('plateResult'),bar=document.getElementById('plateBar');if(!result||!bar)return;const weight=result.dataset.weight===''?NaN:Number(result.dataset.weight),p=barbellPlates(weight,Number(bar.value));result.textContent=!p?'Вкажи вагу підходу не меншу за вагу грифа.':p.plates.length?p.plates.map(n=>n.toLocaleString('uk-UA')).join(' + ')+' кг на бік'+(p.remainder?' · залишок '+p.remainder.toLocaleString('uk-UA')+' кг загалом':''):'Без дисків'+(p.remainder?' · залишок '+p.remainder.toLocaleString('uk-UA')+' кг загалом':'');}
-modal.addEventListener('input',event=>{if(!saveNoteInput(event.target)&&event.target.id==='plateBar')updatePlates();});
+modal.addEventListener('input',event=>{if(!saveNoteInput(event.target)&&['plateBar','plateWeight'].includes(event.target.id)){if(event.target.id==='plateWeight')document.getElementById('plateResult').dataset.weight=event.target.value;updatePlates();}});
 
 function updateTimer(){
   if(!state)return;

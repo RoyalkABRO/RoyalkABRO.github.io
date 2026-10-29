@@ -1,6 +1,7 @@
 import {muscleActivity} from './muscles.js';
 import {volume,localDay} from './stats.js';
 import {recordCount} from './history-index.js';
+import {icon} from './icons.js';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=n=>Number(n).toLocaleString('uk-UA',{maximumFractionDigits:1});
 const statsCache=new WeakMap();
@@ -21,7 +22,7 @@ const back={shoulders:front.shoulders,back:['M68 81 L96 90 96 174 77 160 62 117Z
 function bodySVG(regions,counts,max,selected,label){return '<svg class="muscle-body" viewBox="0 0 200 370" role="img" aria-label="'+label+'"><g class="body-base"><circle cx="100" cy="37" r="22"/><path d="M88 58 L112 58 115 70 Q146 70 158 91 L171 145 177 183 166 191 154 158 143 123 136 168 143 212 142 258 147 302 141 339 154 349 152 356 124 356 116 333 113 291 101 243 99 243 87 291 84 333 76 356 48 356 46 349 59 339 53 302 58 258 57 212 64 168 57 123 46 158 34 191 23 183 29 145 42 91 Q54 70 85 70Z"/></g>'+Object.entries(regions).map(([id,paths])=>{const count=counts.get(id)||0,opacity=count ? 0.25+0.75*count/Math.max(1,max) : 0;return '<g class="muscle-region '+(selected===id?'selected':'')+'" data-action="muscle-select" data-group="'+id+'" tabindex="0" role="button" aria-label="'+esc(counts.labels.get(id))+': '+count+' підходів">'+paths.map(d=>'<path d="'+d+'" style="--muscle-opacity:'+opacity+'"/>').join('')+'</g>';}).join('')+'</svg>';}
 export function progressSummaryBar(state,history){
  const totals=overallStats(history,state.history);
- const cards=[[totals.workouts,'Тренувань'],[totals.sets,'Робочих підходів'],[totals.volume>=1000?num(totals.volume/1000)+' т':num(totals.volume)+' кг','Обсяг']];
+ const cards=[[totals.workouts,'Тренувань'],[totals.sets,'Підходів'],[totals.volume>=1000?num(totals.volume/1000)+' т':num(totals.volume)+' кг','Обсяг']];
  return '<section class="overall-progress" aria-label="Загальна статистика"><div class="overview-grid overview-grid-3">'+cards.map(([value,label])=>'<div class="metric-card"><strong>'+value+'</strong><span>'+label+'</span></div>').join('')+'</div></section>';
 }
 export function progressDetailsSection(state,history,selected,open=false){
@@ -32,4 +33,9 @@ export function progressDetailsSection(state,history,selected,open=false){
 }
 export function progressOverview(state,history,selected){
  return progressSummaryBar(state,history)+progressDetailsSection(state,history,selected,true);
+}
+export function muscleProgressPanel(state,history,selected){
+ const activity=muscleActivity(history,state.catalog),definitions=[['legs','Ноги',['quads','hamstrings','glutes','calves']],['back','Спина',['back']],['chest','Груди',['chest']],['shoulders','Плечі',['shoulders']],['arms','Руки',['biceps','triceps']],['core','Прес',['core']]];
+ const groups=definitions.map(([id,name,ids])=>{const subset=activity.groups.filter(g=>ids.includes(g.id));return {id,name,sets:subset.reduce((n,g)=>n+g.sets,0),exercises:subset.flatMap(g=>g.exercises)};}),max=Math.max(1,...groups.map(g=>g.sets)),current=groups.find(g=>g.id===selected)||groups.slice().sort((a,b)=>b.sets-a.sets)[0];
+ return '<section class="card muscle-card"><div class="row"><h2 class="section-heading">Робочі підходи</h2><button type="button" class="btn alt sm" data-action="muscle-groups">'+icon('settings')+'Групи ('+state.catalog.length+')</button></div><div class="muscle-bars">'+groups.map(g=>'<button type="button" class="muscle-bar-button" data-action="muscle-select" data-group="'+g.id+'" aria-pressed="'+(g.id===current.id)+'"><span><strong>'+g.name+'</strong><span>'+g.sets+' підходів</span></span><span class="muscle-bar-track"><i style="width:'+g.sets/max*100+'%"></i></span></button>').join('')+'</div><div class="muscle-detail"><h3>'+current.name+' <span>'+current.sets+' підходів</span></h3>'+current.exercises.map(e=>'<div class="muscle-exercise"><span>'+esc(e.name)+'</span><strong>'+e.sets+'</strong></div>').join('')+'</div><p class="helper">Основна група вправи; розминкові підходи не враховуються.</p>'+(activity.unknown?'<p class="helper">Без визначеної групи: '+activity.unknown+' підходів.</p>':'')+'</section>';
 }
