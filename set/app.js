@@ -1,7 +1,7 @@
 import {PushNotifications,classifyPushState} from './js/push-notifications.js';
 import {muscleField} from './js/muscles.js';
 import {exerciseOrderForm,bindExerciseOrder,reorderExercises} from './js/exercise-order.js';
-import {compactTiming,setOptionsForm,finishSectionView} from './js/simple-views.js';
+import {compactTiming,setOptionsForm,finishSectionView,workoutMenuForm} from './js/simple-views.js';
 import {focusExercise,upcomingExercise,restDestination,replaceExercise,applyWarmup,warmupSuggestion,forecastSession,optionalSets,restAfterSet} from './js/workout-tools.js';
 import {equipmentFields,replacementForm,warmupForm,warmupRows,extrasForm} from './js/workout-tools-views.js';
 import {restDesign} from './js/design-views.js';
@@ -31,7 +31,7 @@ function updatePushStatus(info){
   Object.assign(ui,{pushStatus:info.message,pushConnected:info.connected,pushReady:info.ready,pushURL:info.url});
   for(const id of ['notificationStatus','restNotificationStatus']){
     const el=document.getElementById(id);
-    if(el){el.textContent=info.message;if(id==='restNotificationStatus')el.hidden=!info.connected;}
+    if(el){el.textContent=info.message;if(id==='restNotificationStatus')el.hidden=!info.connected||!/не підтверджено|помилка|недоступний/i.test(info.message);}
   }
   const badge=document.getElementById('notificationBadge'),hint=document.getElementById('notificationHint');
   if(badge||hint){
@@ -148,7 +148,7 @@ function render(){
   if(state?.session&&state.focusWorkout)ui.focusId=focusExercise(state.session,ui.focusId)?.id;
   app.innerHTML=renderView(state,ui);
   if(ui.tab==='workout'&&state?.session){
-    const line=document.createElement('p');line.id='restNotificationStatus';line.className='helper';line.hidden=!ui.pushConnected;line.textContent=ui.pushStatus||'';
+    const line=document.createElement('p');line.id='restNotificationStatus';line.className='helper notification-warning';line.hidden=!ui.pushConnected||!/не підтверджено|помилка|недоступний/i.test(ui.pushStatus||'');line.textContent=ui.pushStatus||'';
     app.querySelector('.simple-workout')?.append(line);
   }
   if(!navigation.childElementCount)navigation.innerHTML=renderNavigation();
@@ -282,6 +282,8 @@ function showSetFieldError(exId,setId,setObj){
 
 async function handleAction(b){
   const action=b.dataset.action,id=b.dataset.id;unlockSound();
+  if(modalMode==='workout-menu'&&action!=='close-modal')closeModal(true);
+  if(action==='workout-menu'){await queue;const e=id?sessionExercise(state,id):null;openModal(workoutMenuForm(state,e),'workout-menu');return;}
   if(action==='workout-home'){await queue;ui.tab='home';render();window.scrollTo(0,0);return;}
   if(action.startsWith('push-')){if(b.dataset.busy)return;b.dataset.busy='1';b.disabled=true;try{
     if(action==='push-enable'){const code=document.getElementById('pushPairingCode')?.value||'';await pushNotifications.enable(code);const field=document.getElementById('pushPairingCode');if(field)field.value='';await queue;syncPush();}
@@ -364,7 +366,7 @@ async function handleAction(b){
         s.restEndsAt=rest.seconds?Date.now()+rest.seconds*1000:null;
         s.restSetId=rest.seconds?set.id:null;timerNotified=null;
       }else if(s.restSetId===set.id){s.restEndsAt=null;s.restSetId=null;timerNotified=null;}
-    },{cardOnly:true,sessionOnly:true,undoLabel:"Позначку підходу змінено"});
+    },{cardOnly:true,sessionOnly:true});
   }
   if(action==='exercise-order'){
     await queue;openModal(exerciseOrderForm(state,focusExercise(state.session,ui.focusId)?.id),'exercise-order');
@@ -420,13 +422,15 @@ async function handleAction(b){
 
 document.addEventListener('click',event=>{const b=event.target.closest('[data-action]');if(b&&!b.disabled)handleAction(b).catch(showError);});
 
+function saveNoteInput(x){
+  if(!x.matches('[data-note-ex],[data-workout-note]'))return false;
+  const value=x.value;
+  commit(s=>{if(x.hasAttribute('data-workout-note'))s.session.note=value;else{const e=sessionExercise(s,x.dataset.noteEx);e.note=value;const catalog=s.catalog.find(c=>c.id===e.exerciseId);if(catalog)catalog.note=value;}},{redraw:false,preserve:true,sessionOnly:true}).catch(()=>{});
+  return true;
+}
 app.addEventListener('input',event=>{
   const x=event.target;
-  if(x.matches('[data-note-ex],[data-workout-note]')){
-    const value=x.value;
-    commit(s=>{if(x.hasAttribute('data-workout-note'))s.session.note=value;else{const e=sessionExercise(s,x.dataset.noteEx);e.note=value;const catalog=s.catalog.find(c=>c.id===e.exerciseId);if(catalog)catalog.note=value;}},{redraw:false,preserve:true,sessionOnly:true}).catch(()=>{});
-    return;
-  }
+  if(saveNoteInput(x))return;
   if(!x.matches('[data-set][data-field]'))return;
   const {ex,set,field}=x.dataset,value=x.value.replace(',','.');
   const key=fieldKey(x),edit={value};pendingEdits.set(key,edit);
@@ -476,7 +480,7 @@ modal.addEventListener('submit',event=>{event.preventDefault();const form=event.
 })().catch(showError);});
 
 function updatePlates(){const result=document.getElementById('plateResult'),bar=document.getElementById('plateBar');if(!result||!bar)return;const weight=result.dataset.weight===''?NaN:Number(result.dataset.weight),p=barbellPlates(weight,Number(bar.value));result.textContent=!p?'Вкажи вагу підходу не меншу за вагу грифа.':p.plates.length?p.plates.map(n=>n.toLocaleString('uk-UA')).join(' + ')+' кг на бік'+(p.remainder?' · залишок '+p.remainder.toLocaleString('uk-UA')+' кг загалом':''):'Без дисків'+(p.remainder?' · залишок '+p.remainder.toLocaleString('uk-UA')+' кг загалом':'');}
-modal.addEventListener('input',event=>{if(event.target.id==='plateBar')updatePlates();});
+modal.addEventListener('input',event=>{if(!saveNoteInput(event.target)&&event.target.id==='plateBar')updatePlates();});
 
 function updateTimer(){
   if(!state)return;
@@ -536,7 +540,7 @@ if(typeof ResizeObserver!=='undefined'){
 }
 if(window.visualViewport){
   const onViewport=()=>{
-    const kbOpen=window.innerHeight-window.visualViewport.height>140;
+    const kbOpen=window.visualViewport.scale===1&&Boolean(document.activeElement?.matches('input,textarea,select'))&&window.innerHeight-window.visualViewport.height>140;
     document.body.classList.toggle('keyboard-open',kbOpen);
   };
   window.visualViewport.addEventListener('resize',onViewport);

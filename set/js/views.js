@@ -20,6 +20,7 @@ const shortDate = iso => shortDateCache.get(iso)||(shortDateCache.set(iso,new Da
 export {fmtDate};
 const plural = (n,[one,few,many]) => n%10===1&&n%100!==11?one:n%10>=2&&n%10<=4&&(n%100<12||n%100>14)?few:many;
 const formatNumber=n=>Number(n).toLocaleString('uk-UA',{maximumFractionDigits:2});
+const shortRest=n=>n<60?n+' с':Math.floor(n/60)+' хв'+(n%60?' '+n%60+' с':'');
 const SYMBOL_ICONS=new Map([['✎','edit'],['▶','play'],['×','close'],['−','minus'],['✓','check'],['↑','arrow-up'],['↓','arrow-down']]);
 const ACTION_ICONS=new Map([['share-program','share'],['share-text','share'],['copy-share-text','copy'],['export','download'],['import','upload'],['new-template','plus'],['add-set','plus'],['session-add-ex','plus'],['draft-add','plus'],['history-add-set','plus'],['finish-workout','check'],['delete-template','trash'],['delete-history','trash'],['reset','trash']]);
 export const button=(action,label,extra='',className='icon-btn')=>{
@@ -115,11 +116,11 @@ function settingsView(state,ui){
  <section class="card">
   <h3 class="section-heading">Відпочинок та екран</h3>
   <div class="rest-settings-grid">
-   <label class="filter-label" for="rest-duration">Між робочими підходами<select id="rest-duration" class="field">${REST_OPTIONS.map(n=>`<option value="${n}" ${state.restSeconds===n?'selected':''}>${n} секунд</option>`).join('')}</select></label>
-   <label class="filter-label" for="warmup-rest-duration">Після розминки<select id="warmup-rest-duration" class="field">${REST_OPTIONS.map(n=>`<option value="${n}" ${state.warmupRestSeconds===n?"selected":""}>${n} секунд</option>`).join('')}</select></label>
-   <label class="filter-label" for="exercise-rest-duration">Між вправами<select id="exercise-rest-duration" class="field">${REST_OPTIONS.map(n=>`<option value="${n}" ${state.exerciseRestSeconds===n?'selected':''}>${n} секунд</option>`).join('')}</select></label>
+   <label class="filter-label" for="rest-duration">Між робочими підходами<select id="rest-duration" class="field">${REST_OPTIONS.map(n=>`<option value="${n}" ${state.restSeconds===n?'selected':''}>${shortRest(n)}</option>`).join('')}</select></label>
+   <label class="filter-label" for="warmup-rest-duration">Після розминки<select id="warmup-rest-duration" class="field">${REST_OPTIONS.map(n=>`<option value="${n}" ${state.warmupRestSeconds===n?"selected":""}>${shortRest(n)}</option>`).join('')}</select></label>
+   <label class="filter-label" for="exercise-rest-duration">Між вправами<select id="exercise-rest-duration" class="field">${REST_OPTIONS.map(n=>`<option value="${n}" ${state.exerciseRestSeconds===n?'selected':''}>${shortRest(n)}</option>`).join('')}</select></label>
   </div>
-  <p class="helper">Таймер запускається автоматично після відмітки підходу. Час між вправами вмикається після останнього робочого підходу поточної вправи.</p>
+  <p class="helper">Відпочинок починається після виконаного підходу.</p>
   <div class="divider"></div>
   <label class="toggle-setting"><span>Не гасити екран під час тренування</span><input id="keep-awake" type="checkbox" ${state.keepAwake?'checked':''}></label>
   <p class="helper" id="wakeStatus">Працює на екрані активного тренування.</p>
