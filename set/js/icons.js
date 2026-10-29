@@ -41,6 +41,9 @@ const ICONS={
 };
 
 const EXTRA={
+ 'bell':'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
+ 'sun':'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/>',
+ 'cloud':'<path d="M7 18H6a4 4 0 1 1 0-8 6 6 0 0 1 12-2 5 5 0 0 1 0 10h-1M9 16l3 3 4-5"/>',
  'target':'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
  'note':'<path d="M8 3H5v18h14V7l-4-4H8Z"/><path d="M14 3v5h5M8 12h8M8 16h6"/>',
  'swap':'<path d="M4 7h16l-4-4M20 17H4l4 4M20 7l-4 4M4 17l4-4"/>',

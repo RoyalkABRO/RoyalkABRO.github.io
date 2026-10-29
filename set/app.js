@@ -6,12 +6,12 @@ import {focusExercise,upcomingExercise,restDestination,replaceExercise,applyWarm
 import {equipmentFields,replacementForm,warmupForm,warmupRows,extrasForm} from './js/workout-tools-views.js';
 import {restDesign} from './js/design-views.js';
 import {barbellPlates} from './js/dashboard.js';
-import {isWorking,workingSets,suggestGoal,applyGoal,canOfferExtra} from './js/progression.js';
+import {isWorking,workingSets,suggestGoal,applyGoal,canOfferExtra,setLabel} from './js/progression.js';
 import {historyCSV,workoutImage} from './js/exports.js';
 import {WorkoutWakeLock} from './js/wake-lock.js';
 import {Repository} from './js/storage.js';
 import {fresh,normalize,clone,uid,getOrCreateExercise,validSet,startSession,finishSession,moveItem} from './js/model.js';
-import {renderView,renderNavigation,renderFocusedExercise,goalForm,shareProgramForm,templateForm,historyDetail,historyEditor,catalogList,esc,button,programPreview,exerciseHistoryForm,muscleGroupsForm} from './js/views.js';
+import {renderView,renderNavigation,renderFocusedExercise,goalForm,shareProgramForm,templateForm,historyDetail,historyEditor,catalogList,esc,button,programPreview,exerciseHistoryForm,muscleGroupsForm,equipmentListForm,planPreview} from './js/views.js';
 import {programText} from './js/share.js';
 import {addPersonalProgram,onlyStarterPlans} from './js/programs.js';
 import {remaining,formatClock,unlockSound,beep} from './js/timer.js';
@@ -30,6 +30,7 @@ const fieldKey=x=>JSON.stringify([x.dataset.ex,x.dataset.set,x.dataset.field]);
 
 function updatePushStatus(info){
   Object.assign(ui,{pushStatus:info.message,pushConnected:info.connected,pushReady:info.ready,pushURL:info.url});
+  const pushSummary=document.getElementById('notificationSummaryStatus');if(pushSummary)pushSummary.textContent=classifyPushState(ui).badge;
   for(const id of ['notificationStatus','restNotificationStatus']){
     const el=document.getElementById(id);
     if(el){el.textContent=info.message;if(id==='restNotificationStatus')el.hidden=!info.connected||!/не підтверджено|помилка|недоступний/i.test(info.message);}
@@ -130,9 +131,9 @@ function updateExerciseCardDOM(){
       for(const d of old.querySelectorAll('details[open]')){const counterpart=fresh.querySelector('details.'+d.classList[0]);if(counterpart)counterpart.open=true;}
       if(old.matches('details')&&old.open)fresh.open=true;
       if(old.outerHTML!==fresh.outerHTML)old.replaceWith(fresh);
-    }else if(old)old.remove();else if(fresh)currentCard.append(fresh);
+    }else if(old)old.remove();else if(fresh)currentCard.insertBefore(fresh,selector==='.live-record-banner'?currentCard.querySelector('.quiet-effort'):null);
   };
-  for(const selector of ['.exercise-meta','.exercise-prior','.goal-summary-box','.first-set-coachmark','.quiet-effort'])replaceSection(selector);
+  for(const selector of ['.exercise-meta','.exercise-badge-row','.goal-summary-box','.first-set-coachmark','.live-record-banner','.quiet-effort'])replaceSection(selector);
   const dock=document.getElementById('restSlot');if(dock){const t=document.createElement('template');t.innerHTML=restBarView(state,focused.id);const old=dock.querySelector('.next-exercise-callout'),next=t.content.querySelector('.next-exercise-callout');if(old&&next)old.replaceWith(next);else if(old)old.remove();else if(next)dock.append(next);}
   const replaceButton=currentCard.querySelector('[data-action="replace-exercise"]');
   if(replaceButton)replaceButton.disabled=nextCard.querySelector('[data-action="replace-exercise"]').disabled;
@@ -150,12 +151,12 @@ function render(){
   const focusSelector=activeEl?.dataset?.set&&activeEl?.dataset?.field?`[data-set="${activeEl.dataset.set}"][data-field="${activeEl.dataset.field}"]`:null;
   const selStart=activeEl?.selectionStart,selEnd=activeEl?.selectionEnd;
   if(state?.session&&state.focusWorkout)ui.focusId=focusExercise(state.session,ui.focusId)?.id;
-  // Keep the same undo node while rebuilding the view; in a workout it is in
-  // document flow below the header, so it cannot cover the rest dock.
+  // Keep the same undo node across renders, immediately before the rest dock.
+  // CSS and measured dock height keep it above the fixed dock or in flow.
   undoBar.remove();
   app.innerHTML=renderView(state,ui);
-  const workoutHead=app.querySelector('.simple-workout-head');
-  if(workoutHead)workoutHead.after(undoBar);else document.getElementById('toast').before(undoBar);
+  const workoutDock=document.getElementById('restSlot');
+  if(workoutDock)workoutDock.before(undoBar);else document.getElementById('toast').before(undoBar);
   if(ui.tab==='workout'&&state?.session){
     const line=document.createElement('p');line.id='restNotificationStatus';line.className='helper notification-warning';line.hidden=!ui.pushConnected||!/не підтверджено|помилка|недоступний/i.test(ui.pushStatus||'');line.textContent=ui.pushStatus||'';
     app.querySelector('.simple-workout')?.append(line);
@@ -166,7 +167,7 @@ function render(){
     const active=tab.dataset.tab===current;tab.classList.toggle('active',active);
     if(active)tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');
   }
-  navigation.hidden=ui.tab==='workout'&&Boolean(state?.session);updateWorkoutProgress();saveStatus();updateTimer();syncWakeLock();
+  navigation.hidden=ui.tab==='workout'&&Boolean(state?.session);updateWorkoutProgress();saveStatus();updateTimer();syncWakeLock();layoutWorkoutDock();
   if(focusSelector){
     const restored=app.querySelector(focusSelector);
     if(restored){restored.focus({preventScroll:true});try{if(selStart!=null)restored.setSelectionRange(selStart,selEnd);}catch{}}
@@ -297,6 +298,8 @@ async function handleAction(b){
   if(action==='workout-note'){await queue;openModal(workoutNoteForm(state,sessionExercise(state,id)),'workout-note');return;}
   if(action==='exercise-history'){await queue;openModal(exerciseHistoryForm(state,sessionExercise(state,id)),'exercise-history');return;}
   if(action==='muscle-groups'){openModal(muscleGroupsForm(state),'muscle-groups');return;}
+  if(action==='equipment-all'){openModal(equipmentListForm(state),'equipment-all');return;}
+  if(action==='view-template'){await queue;openModal(planPreview(state,id),'plan-preview');return;}
   if(action==='progress-tab'){ui.progressTab=b.dataset.progressTab;render();return;}
   if(action==='history-more'){ui.historyLimit=(ui.historyLimit||50)+50;render();return;}
   if(action==='session-finish-menu'){openModal(button('close-modal',icon('close'),'aria-label="Закрити"','modal-close')+'<h2>Завершення заняття</h2><div class="btn-column">'+button('finish-workout','Зберегти та завершити','','btn block')+button('cancel-workout','Скасувати заняття','','btn danger block')+button('easy-day',state.session.easy?'Звичайне навантаження':'Сьогодні легше','','btn alt block')+button('review-extras','Переглянути додаткові підходи','','btn alt block')+'</div>','session-finish');return;}
@@ -310,7 +313,7 @@ async function handleAction(b){
   }catch(e){pushNotifications.status(e.message);toast(e.message);}finally{b.disabled=false;delete b.dataset.busy;}return;}
 
   if(action==='tab'){await queue;if(window.scrollY)window.scrollTo(0,0);ui.tab=b.dataset.tab;render();if(window.scrollY)window.scrollTo(0,0);return;}
-  if(action==='resume'){if(window.scrollY)window.scrollTo(0,0);ui.tab='workout';render();return;}
+  if(action==='resume'){if(modal.open)closeModal(true);if(window.scrollY)window.scrollTo(0,0);ui.tab='workout';render();return;}
   if(action==='history-mode'){ui.historyMode=b.dataset.mode;ui.historyDate=null;ui.historyLimit=50;render();return;}
   if(action==='history-day'){ui.historyDate=ui.historyDate===b.dataset.date?null:b.dataset.date;render();return;}
   if(action==='calendar-month'){ui.historyMode='calendar';ui.historyDate=null;const base=ui.calendarMonth?new Date(ui.calendarMonth+'-01T12:00:00'):new Date();const month=new Date(base.getFullYear(),base.getMonth()+Number(b.dataset.direction),1);ui.calendarMonth=month.getFullYear()+'-'+String(month.getMonth()+1).padStart(2,'0');render();return;}
@@ -373,6 +376,7 @@ async function handleAction(b){
       showSetFieldError(b.dataset.ex,b.dataset.set,currentSet);
       return;
     }
+    const exercise=sessionExercise(state,b.dataset.ex),finishesExercise=isWorking(currentSet)&&!currentSet.done&&workingSets(exercise).every(s=>s.id===currentSet.id||s.done);
     return commit(s=>{
       const set=sessionSet(s,b.dataset.ex,b.dataset.set);
       if(!set.done&&!validSet({...set,done:true},true))throw new Error('Вкажи вагу 0–10000 кг і цілу кількість повторень 1–1000');
@@ -383,8 +387,9 @@ async function handleAction(b){
         s.restEndsAt=rest.seconds?Date.now()+rest.seconds*1000:null;
         s.restSetId=rest.seconds?set.id:null;timerNotified=null;
       }else if(s.restSetId===set.id){s.restEndsAt=null;s.restSetId=null;timerNotified=null;}
-    },{cardOnly:true,sessionOnly:true});
+    },{cardOnly:true,sessionOnly:true,undoLabel:finishesExercise?'Підхід '+setLabel(exercise,exercise.sets.indexOf(currentSet))+' збережено':null});
   }
+  if(action==='set-effort'){await commit(s=>{const set=sessionSet(s,b.dataset.ex,b.dataset.set),value=Number(b.dataset.rirValue);if(!set.done)return;if(set.rir===value)delete set.rir;else set.rir=value;},{cardOnly:true,sessionOnly:true});return;}
   if(action==='exercise-order'){
     await queue;openModal(exerciseOrderForm(state,focusExercise(state.session,ui.focusId)?.id),'exercise-order');
     orderCleanup?.();
@@ -487,6 +492,7 @@ app.addEventListener('change',event=>{
 app.addEventListener('toggle',event=>{
   if(event.target.matches('.progress-details-card'))ui.progressDetailsOpen=event.target.open;
   if(event.target.matches('details.muscle-detail'))ui.muscleDetailsOpen=event.target.open;
+  if(event.target.matches('.muscle-group')){const id=event.target.dataset.muscleGroup;if(event.target.open){ui.muscleGroup=id;for(const other of app.querySelectorAll('.muscle-group'))if(other!==event.target)other.open=false;}else if(ui.muscleGroup===id)ui.muscleGroup=null;}
 },true);
 
 modal.addEventListener('cancel',event=>{event.preventDefault();closeModal();});
@@ -508,7 +514,7 @@ modal.addEventListener('input',event=>{if(!saveNoteInput(event.target)&&['plateB
 
 function updateTimer(){
   if(!state)return;
-  const timing=document.getElementById('compactTiming');if(timing)timing.textContent=compactTiming(state);
+  for(const timing of document.querySelectorAll('.session-clock-value'))timing.textContent=compactTiming(state);
   const compact=document.getElementById('restCompact'),idleBar=document.getElementById('restIdleBar'),slot=document.getElementById('restSlot');
   const hasRest=Boolean(state.restEndsAt);
   if(compact)compact.hidden=!hasRest;
@@ -531,7 +537,7 @@ function updateTimer(){
       ?'Відпочинок завершено'
       :state.restKind==='exercise'
         ?'Між вправами'
-        :state.restKind==='warmup'?'Після розминки':'Між підходами';
+        :state.restKind==='warmup'?'Після розминки':'Відпочинок';
   }
   if(state.restEndsAt&&state.restEndsAt<=Date.now()&&timerNotified!==state.restEndsAt&&!document.hidden){
     timerNotified=state.restEndsAt;if(pushNotifications.confirmedEnd!==state.restEndsAt)beep();toast('Час наступного підходу!');
@@ -549,15 +555,33 @@ window.addEventListener('set-storage-changed',storageChanged);
 document.getElementById('noticeExport').addEventListener('click',()=>{if(state)exportBackup().catch(showError);else repo.recoveryText().then(text=>{if(text)download(text,'set-recovery.json');else toast('Попередніх локальних даних немає');});});
 document.getElementById('noticeReload').addEventListener('click',()=>{if((pending||failed)&&!confirm('Є незбережені зміни. Спочатку збережи копію. Перезавантажити?'))return;location.reload();});
 
+// A fixed dock is used when there is enough room for the exercise. Large text,
+// a small viewport or the software keyboard puts dock + undo in document flow.
+function layoutWorkoutDock(){
+ const dock=document.getElementById('restSlot'),head=app.querySelector('.simple-workout-head');
+ if(!dock){document.body.classList.remove('dock-in-flow');return;}
+ const height=dock.getBoundingClientRect().height,viewport=window.visualViewport?.height||window.innerHeight,header=head?.getBoundingClientRect().height||44,undoHeight=undoBar.hidden?0:undoBar.getBoundingClientRect().height;
+ document.body.style.setProperty('--dock-height',height+'px');document.body.style.setProperty('--workout-head-height',header+'px');
+ const compact=document.body.classList.contains('keyboard-open')||height>Math.min(320,viewport*.42)||viewport-header-height-undoHeight<240;
+ document.body.classList.toggle('dock-in-flow',compact);
+}
 // VisualViewport handler: keep active input unobstructed when soft keyboard opens
 if(typeof ResizeObserver!=='undefined'){
+  let layoutFrame=0;
   const observed=new ResizeObserver(()=>{
+    // Defer size-changing writes until the next frame: WebKit otherwise
+    // reports an undelivered ResizeObserver loop when the dock changes mode.
+    if(layoutFrame)return;
+    layoutFrame=requestAnimationFrame(()=>{
+    layoutFrame=0;
     document.body.style.setProperty('--nav-height',navigation.getBoundingClientRect().height+'px');
     document.body.style.setProperty('--undo-height',undoBar.getBoundingClientRect().height+'px');
     const head=app.querySelector('.simple-workout-head');
     document.body.style.setProperty('--workout-head-height',(head?.getBoundingClientRect().height||44)+'px');
     const dock=document.getElementById('restSlot');
     if(dock)document.body.style.setProperty('--dock-height',dock.getBoundingClientRect().height+'px');
+    layoutWorkoutDock();
+    });
   });
   observed.observe(navigation);
   observed.observe(undoBar);
@@ -569,6 +593,7 @@ if(window.visualViewport){
   const onViewport=()=>{
     const kbOpen=window.visualViewport.scale===1&&Boolean(document.activeElement?.matches('input,textarea,select'))&&window.innerHeight-window.visualViewport.height>140;
     document.body.classList.toggle('keyboard-open',kbOpen);
+    layoutWorkoutDock();
   };
   window.visualViewport.addEventListener('resize',onViewport);
 }

@@ -60,6 +60,20 @@ export function recordIndex(history){return cached(recordCache,history,()=>{
 });}
 export function workoutPRs(history,w){const found=history.includes(w)?recordIndex(history).get(w.id):null;return found||directWorkoutPRs(history,w);}
 export function recordCount(history,within=history){const index=recordIndex(history);let n=0;for(const w of within)n+=(index.get(w.id)||workoutPRs(history,w)).length;return n;}
+const sessionBaselineCache=new WeakMap();
+// Baseline is read once per immutable history/session pair. Live rows are then
+// compared in their actual order, so undo/editing a PR immediately recalculates it.
+export function sessionRecords(history,session){
+ if(!session)return new Map();
+ const key=session.id+':'+session.startedAt;let entry=Object.isFrozen(history)?sessionBaselineCache.get(history):null;
+ if(entry?.key!==key){const best=new Map();for(const w of history){if(w.id===session.id||Date.parse(w.finishedAt)>Date.parse(session.startedAt))continue;for(const e of w.exercises)for(const s of e.sets){if(!s.done||!isWorking(s))continue;let b=best.get(e.exerciseId);if(!b){b=emptyBest();best.set(e.exerciseId,b);}absorb(b,s);}}entry={key,best};if(Object.isFrozen(history))sessionBaselineCache.set(history,entry);}
+ const local=new Map(),result=new Map();
+ for(const e of session.exercises)for(const s of e.sets){if(!s.done||!isWorking(s))continue;const base=entry.best.get(e.exerciseId),seen=local.get(e.exerciseId),labels=labelsFor(s,base,seen);
+  if(labels.length){const previousWeight=Math.max(base?.weight??-Infinity,seen?.weight??-Infinity),previousReps=Math.max(base?.reps.get(Number(s.weight))??-Infinity,seen?.reps.get(Number(s.weight))??-Infinity);result.set(s.id,{name:e.name,set:s,labels,deltaWeight:labels.includes('Вага')&&Number.isFinite(previousWeight)?Number(s.weight)-previousWeight:null,deltaReps:labels.includes('Повторення')&&Number.isFinite(previousReps)?Number(s.reps)-previousReps:null});}
+  let b=local.get(e.exerciseId);if(!b){b=emptyBest();local.set(e.exerciseId,b);}absorb(b,s);
+ }
+ return result;
+}
 const priorWeightCache=new WeakMap();
 export function priorWeights(history){return cached(priorWeightCache,history,()=>{
  const starts=[...history].sort((a,b)=>Date.parse(a.startedAt)-Date.parse(b.startedAt)),finishes=[...history].sort((a,b)=>Date.parse(a.finishedAt)-Date.parse(b.finishedAt)),best=new Map(),result=new Map();let cursor=0;
