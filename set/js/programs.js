@@ -36,7 +36,10 @@ export const PERSONAL_PROGRAM = [
 ];
 export function missingProgramDays(state){return PERSONAL_PROGRAM.filter(day=>!state.templates.some(t=>t.id===day.id));}
 export function onlyStarterPlans(state){
-  return !state.history.length&&!state.session&&!state.catalog.length&&state.templates.length===3&&state.templates.every(t=>!t.exercises.length&&[1,3,5].includes(t.day)&&t.name===`Тренування ${'ABC'[[1,3,5].indexOf(t.day)]}`);
+  return !state.history.length&&!state.session&&!state.catalog.length&&(state.templates.length===0||(state.templates.length===3&&state.templates.every(t=>!t.exercises.length&&[1,3,5].includes(t.day)&&t.name===`Тренування ${'ABC'[[1,3,5].indexOf(t.day)]}`)));
+}
+export function isFirstLaunch(state){
+  return onlyStarterPlans(state);
 }
 export function addPersonalProgram(state){
   const missing=missingProgramDays(state);

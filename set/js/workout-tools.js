@@ -1,5 +1,6 @@
 import {isWorking,workingSets,previousDuration} from './progression.js';
 import {getOrCreateExercise,previousSets,uid} from './model.js';
+import {newestFirst} from './history-index.js';
 export const EQUIPMENT_FIELDS=[['seat','Сидіння'],['bench','Нахил лавки'],['pin','Положення блока'],['grip','Хват / руків’я']];
 export function equipmentText(e){return EQUIPMENT_FIELDS.filter(([key])=>e.equipment?.[key]).map(([key,label])=>label+': '+e.equipment[key]).join(' · ');}
 export function focusExercise(session,selected){return session?.exercises.find(e=>e.id===selected)||session?.exercises.find(e=>e.sets.some(s=>!s.done))||session?.exercises[0]||null;}
@@ -27,7 +28,7 @@ export function replaceExercise(state,sessionId,name,reps){
 export function optionalSets(session){return (session?.exercises||[]).flatMap(e=>workingSets(e).slice(e.targetSets||4).filter(s=>!s.done).map(s=>({exerciseId:e.id,setId:s.id,name:e.name})));}
 export function forecastSession(state,now=Date.now()){
  const w=state.session;if(!w)return null;const elapsed=Math.max(0,(now-Date.parse(w.startedAt))/60000),all=w.exercises.flatMap(e=>e.sets),working=all.filter(isWorking),done=working.filter(s=>s.done).length,pending=working.filter(s=>!s.done).length,warm=all.filter(s=>!isWorking(s)&&!s.done).length;
- const prior=[...state.history].filter(p=>w.templateId&&p.templateId===w.templateId&&Date.parse(p.finishedAt)<=Date.parse(w.startedAt)).sort((a,b)=>Date.parse(b.finishedAt)-Date.parse(a.finishedAt))[0];
+ const prior=newestFirst(state.history).find(p=>w.templateId&&p.templateId===w.templateId&&Date.parse(p.finishedAt)<=Date.parse(w.startedAt));
  const priorCount=prior?.exercises.flatMap(workingSets).length||0;
  let estimated=false,cycle=.75+state.restSeconds/60,source='за часом підходу й відпочинку';
  if(priorCount){estimated=true;cycle=Math.max(.5,Math.min(8,previousDuration(state)/priorCount));source='за минулим заняттям';}

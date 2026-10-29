@@ -1,5 +1,6 @@
 import {MUSCLE_IDS} from './muscles.js';
 import {isWorking} from './progression.js';
+import {newestFirst} from './history-index.js';
 export const VERSION = 2;
 export const LEGACY_KEY = 'set_workout_v1';
 export const DAYS = ['Неділя','Понеділок','Вівторок','Середа','Четвер','Пʼятниця','Субота'];
@@ -26,6 +27,10 @@ function goalData(e){if(e.goal===undefined)return {};const g=e.goal;if(!object(g
 export function repTarget(e){
   if(e.targetRepsUnspecified)return 'повторення за фактом';
   return e.targetRepsMax&&e.targetRepsMax!==e.targetReps?`${e.targetReps}–${e.targetRepsMax} повт.`:`${e.targetReps} повт.`;
+}
+export function compactRepTarget(e){
+  if(e.targetRepsUnspecified)return 'за фактом';
+  return e.targetRepsMax&&e.targetRepsMax!==e.targetReps?`${e.targetReps}–${e.targetRepsMax}`:`${e.targetReps}`;
 }
 function repOptions(e){
   if(e.targetRepsUnspecified!==undefined&&typeof e.targetRepsUnspecified!=='boolean')fail('Некоректна ціль повторень');
@@ -71,7 +76,7 @@ export function normalize(raw) {
     if (completed&&!exercises.length) fail('Порожній запис історії');
     return {id:w.id,templateId:w.templateId,title:w.title.trim(),startedAt:w.startedAt,...(completed&&w.goalProgress?{goalProgress:{...w.goalProgress}}:{}),...note(w.note),...(w.easy!==undefined?{easy:w.easy===true}:{}),...(completed?{finishedAt:w.finishedAt}:{}),exercises};
   }
-  out.history=raw.history.map(w=>workout(w,true)).sort((a,b)=>Date.parse(a.startedAt)-Date.parse(b.startedAt));
+  out.history=raw.history.map(w=>workout(w,true)).sort((a,b)=>Date.parse(a.finishedAt)-Date.parse(b.finishedAt));
   out.session=raw.session==null?null:workout(raw.session,false);
   if(out.session&&out.history.some(w=>w.id===out.session.id)) fail('Поточне тренування вже є в історії');
   if (!unique(out.templates)||!unique(out.history)) fail('Повторні ідентифікатори записів');
@@ -94,10 +99,43 @@ export function getOrCreateExercise(state,name) {
   if (!found) {found={id:uid(),name:clean};state.catalog.push(found);} return found;
 }
 export function previousSets(state,exerciseId) {
-  for(const w of [...state.history].sort((a,b)=>Date.parse(b.finishedAt)-Date.parse(a.finishedAt))) {
+  for(const w of newestFirst(state.history)) {
     const sets=w.exercises.filter(e=>e.exerciseId===exerciseId).flatMap(e=>e.sets).filter(isWorking);
     if(sets.length) return sets;
   } return [];
+}
+export function normalizeSession(raw, catalog) {
+  if(raw==null) return null;
+  if(!object(raw)||!id(raw.id)||!text(raw.title,70)||!date(raw.startedAt)||!list(raw.exercises,200)||!unique(raw.exercises)||!(raw.templateId===null||id(raw.templateId))) fail('Пошкоджене тренування');
+  if(raw.easy!==undefined&&typeof raw.easy!=='boolean')fail('Некоректний режим заняття');
+  const exercises=raw.exercises.map(e=>{
+    if (!object(e)||!id(e.id)||!text(e.name,90)||!id(e.exerciseId)||!catalog.some(x=>x.id===e.exerciseId)) fail('Пошкоджена вправа');
+    if (!list(e.sets,200)||!e.sets.every(s=>validSet(s,false))||!unique(e.sets)) fail('Некоректні підходи');
+    const targets={...trainingConfig(e),...goalData(e)};
+    if(e.replacementFor!==undefined){const r=e.replacementFor;if(!object(r)||!id(r.exerciseId)||!text(r.name,90)||!catalog.some(c=>c.id===r.exerciseId))fail('Некоректна заміна вправи');targets.replacementFor={exerciseId:r.exerciseId,name:r.name};}
+    if(e.targetSets!==undefined){if(!Number.isInteger(e.targetSets)||e.targetSets<1||e.targetSets>200)fail('Некоректна кількість підходів');targets.targetSets=e.targetSets;}
+    if(e.targetReps!==undefined){if(!Number.isInteger(e.targetReps)||e.targetReps<1||e.targetReps>1000)fail('Некоректна ціль повторень');Object.assign(targets,{targetReps:e.targetReps},repOptions(e));}
+    return {id:e.id,exerciseId:e.exerciseId,name:e.name.trim(),...note(e.note),...targets,sets:e.sets.map(s=>({id:s.id,weight:s.weight,reps:s.reps,done:s.done,...(s.type!==undefined?{type:s.type}:{}),...(s.rir!==undefined?{rir:s.rir}:{})}))};
+  });
+  return {id:raw.id,templateId:raw.templateId,title:raw.title.trim(),startedAt:raw.startedAt,...note(raw.note),...(raw.easy!==undefined?{easy:raw.easy===true}:{}),exercises};
+}
+export function normalizeMeta(raw, currentState) {
+  const out={...currentState};
+  if (!list(raw.catalog,10000) || !raw.catalog.every(e=>object(e)&&id(e.id)&&text(e.name,90)) || !unique(raw.catalog)) fail('Пошкоджений каталог вправ');
+  out.catalog = raw.catalog.map(e=>({id:e.id,name:e.name.trim(),...note(e.note),...trainingConfig(e)}));
+  out.session = normalizeSession(raw.session, out.catalog);
+  if(out.session&&out.history.some(w=>w.id===out.session.id)) fail('Поточне тренування вже є в історії');
+  out.warmupRestSeconds=REST_OPTIONS.includes(raw.warmupRestSeconds)?raw.warmupRestSeconds:60;
+  out.restSeconds=REST_OPTIONS.includes(raw.restSeconds)?raw.restSeconds:90;
+  out.exerciseRestSeconds=REST_OPTIONS.includes(raw.exerciseRestSeconds)?raw.exerciseRestSeconds:180;
+  out.restKind=['warmup','set','exercise'].includes(raw.restKind)?raw.restKind:'set';
+  out.restSetId=out.session&&id(raw.restSetId)?raw.restSetId:null;
+  out.restDuration=Number.isFinite(raw.restDuration)&&raw.restDuration>0&&raw.restDuration<=86400?raw.restDuration:out.restSeconds;
+  out.restEndsAt=out.session&&Number.isFinite(raw.restEndsAt)&&raw.restEndsAt>0?raw.restEndsAt:null;
+  out.lastBackupAt=date(raw.lastBackupAt)?raw.lastBackupAt:null;
+  out.keepAwake=raw.keepAwake===true;
+  out.focusWorkout=true;
+  return out;
 }
 export function startSession(state,templateId) {
   if(state.session) fail('Спочатку заверши поточне тренування');
@@ -119,13 +157,4 @@ export function finishSession(state) {
 export function moveItem(items,id,direction) {
   const index=items.findIndex(e=>e.id===id), next=index+direction;
   if(index>=0&&next>=0&&next<items.length) [items[index],items[next]]=[items[next],items[index]];
-}
-
-
-// Validate both endpoints together before saving a historical correction.
-export function workoutTimes(start,end){
-  const a=new Date(start).getTime(),b=new Date(end).getTime();
-  if(!Number.isFinite(a)||!Number.isFinite(b))throw Error('Вкажи початок і завершення тренування.');
-  if(b<=a)throw Error('Завершення має бути пізніше за початок тренування.');
-  return {startedAt:new Date(a).toISOString(),finishedAt:new Date(b).toISOString()};
 }
