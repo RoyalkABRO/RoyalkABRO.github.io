@@ -21,6 +21,7 @@ import {icon} from './js/icons.js';
 const app=document.getElementById('app'),modal=document.getElementById('modal'),modalContent=document.getElementById('modalContent');
 const notice=document.getElementById('notice'),noticeText=document.getElementById('noticeText');
 const navigation=document.getElementById('navigation');
+const undoBar=document.getElementById('undoBar');
 const repo=new Repository();
 let state,queue=Promise.resolve(),pending=0,failed=false,stale=false,toastHandle,draft=null,draftBaseline='',historyDraft=null,historyBaseline='',modalMode='',timerNotified=null,resultFile=null,resultURL=null;
 const ui={tab:'home',historyDays:0,historyMode:'list',historyDate:null,progressDays:0,progressDetailsOpen:false,metric:'weight',exerciseId:null,offlineStatus:'Перевіряємо офлайн-готовність…',storageStatus:'Сховище на пристрої'};
@@ -46,12 +47,12 @@ function updatePushStatus(info){
 const pushNotifications=new PushNotifications({onStatus:updatePushStatus});
 function syncPush(){if(state&&!failed&&!stale)void pushNotifications.sync(state);}
 let undoRecord=null,undoHandle,orderCleanup=null;
-function clearUndo(){undoRecord=null;clearTimeout(undoHandle);document.getElementById('undoBar').hidden=true;}
+function clearUndo(){undoRecord=null;clearTimeout(undoHandle);undoBar.hidden=true;}
 function offerUndo(before,label,tab,focusId,sessionOnly=false){
   clearUndo();
   undoRecord={state:before,sessionOnly,revision:repo.revision,expires:Date.now()+20000,tab,focusId};
   document.getElementById('undoLabel').textContent=label;
-  document.getElementById('undoBar').hidden=false;
+  undoBar.hidden=false;
   undoHandle=setTimeout(clearUndo,20000);
 }
 const channel=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('set-workout-updates'):null;
@@ -149,7 +150,12 @@ function render(){
   const focusSelector=activeEl?.dataset?.set&&activeEl?.dataset?.field?`[data-set="${activeEl.dataset.set}"][data-field="${activeEl.dataset.field}"]`:null;
   const selStart=activeEl?.selectionStart,selEnd=activeEl?.selectionEnd;
   if(state?.session&&state.focusWorkout)ui.focusId=focusExercise(state.session,ui.focusId)?.id;
+  // Keep the same undo node while rebuilding the view; in a workout it is in
+  // document flow below the header, so it cannot cover the rest dock.
+  undoBar.remove();
   app.innerHTML=renderView(state,ui);
+  const workoutHead=app.querySelector('.simple-workout-head');
+  if(workoutHead)workoutHead.after(undoBar);else document.getElementById('toast').before(undoBar);
   if(ui.tab==='workout'&&state?.session){
     const line=document.createElement('p');line.id='restNotificationStatus';line.className='helper notification-warning';line.hidden=!ui.pushConnected||!/не підтверджено|помилка|недоступний/i.test(ui.pushStatus||'');line.textContent=ui.pushStatus||'';
     app.querySelector('.simple-workout')?.append(line);
@@ -424,7 +430,7 @@ async function handleAction(b){
   if(action==='edit-history'){historyDraft=clone(state.history.find(w=>w.id===id));openModal(historyEditor(historyDraft),'history-edit');syncHistoryDraft();historyBaseline=JSON.stringify(historyDraft);return;}
   if(action==='history-remove-set'){syncHistoryDraft();const e=historyDraft.exercises.find(e=>e.id===b.dataset.ex);if(e.sets.length===1){if(!confirm('Прибрати вправу з цього запису?'))return;historyDraft.exercises=historyDraft.exercises.filter(x=>x.id!==e.id);}else e.sets=e.sets.filter(s=>s.id!==b.dataset.set);openModal(historyEditor(historyDraft),'history-edit');return;}
   if(action==='history-add-set'){syncHistoryDraft();const e=historyDraft.exercises.find(e=>e.id===id);if(e.sets.length>=200)return toast('Максимум 200 підходів');e.sets.push({id:uid(),weight:e.sets.at(-1)?.weight??0,reps:e.sets.at(-1)?.reps??8,done:true});openModal(historyEditor(historyDraft),'history-edit');return;}
-  if(action==='muscle-select'){ui.muscleGroup=b.dataset.group;ui.progressDetailsOpen=true;const y=window.scrollY;render();window.scrollTo(0,y);return;}
+  if(action==='muscle-select'){ui.muscleGroup=b.dataset.group;ui.progressDetailsOpen=true;ui.muscleDetailsOpen=true;const y=window.scrollY;render();window.scrollTo(0,y);return;}
   if(action==='chart-metric'){ui.metric=b.dataset.metric;const y=window.scrollY;render();window.scrollTo(0,y);return;}
   if(action==='rename-exercise'){openExerciseConfig(id);return;}
   if(action==='check-offline'){ui.offlineStatus=await checkOffline();render();return;}
@@ -480,6 +486,7 @@ app.addEventListener('change',event=>{
 });
 app.addEventListener('toggle',event=>{
   if(event.target.matches('.progress-details-card'))ui.progressDetailsOpen=event.target.open;
+  if(event.target.matches('details.muscle-detail'))ui.muscleDetailsOpen=event.target.open;
 },true);
 
 modal.addEventListener('cancel',event=>{event.preventDefault();closeModal();});
@@ -520,11 +527,10 @@ function updateTimer(){
   if(meter)meter.style.width=(Math.min(1,remaining(state.restEndsAt,0)/Math.max(1,state.restDuration||state.restSeconds))*100)+'%';
   const label=document.getElementById('restLabel');
   if(label){
-    const nextEx=state.session?restDestination(state,ui.focusId).next:null;
     label.textContent=state.restEndsAt&&remaining(state.restEndsAt,state.restSeconds)===0
       ?'Відпочинок завершено'
-      :state.restKind==='exercise'&&nextEx
-        ?(nextEx?'Між вправами · Далі: '+nextEx.name:'Між вправами')
+      :state.restKind==='exercise'
+        ?'Між вправами'
         :state.restKind==='warmup'?'Після розминки':'Між підходами';
   }
   if(state.restEndsAt&&state.restEndsAt<=Date.now()&&timerNotified!==state.restEndsAt&&!document.hidden){
@@ -547,12 +553,16 @@ document.getElementById('noticeReload').addEventListener('click',()=>{if((pendin
 if(typeof ResizeObserver!=='undefined'){
   const observed=new ResizeObserver(()=>{
     document.body.style.setProperty('--nav-height',navigation.getBoundingClientRect().height+'px');
+    document.body.style.setProperty('--undo-height',undoBar.getBoundingClientRect().height+'px');
+    const head=app.querySelector('.simple-workout-head');
+    document.body.style.setProperty('--workout-head-height',(head?.getBoundingClientRect().height||44)+'px');
     const dock=document.getElementById('restSlot');
     if(dock)document.body.style.setProperty('--dock-height',dock.getBoundingClientRect().height+'px');
   });
   observed.observe(navigation);
-  let previousDock;
-  const watchDock=()=>{const dock=document.getElementById('restSlot');if(dock!==previousDock){if(previousDock)observed.unobserve(previousDock);if(dock)observed.observe(dock);previousDock=dock;}};
+  observed.observe(undoBar);
+  let previousDock,previousHead;
+  const watchDock=()=>{const dock=document.getElementById('restSlot');if(dock!==previousDock){if(previousDock)observed.unobserve(previousDock);if(dock)observed.observe(dock);previousDock=dock;}const head=app.querySelector('.simple-workout-head');if(head!==previousHead){if(previousHead)observed.unobserve(previousHead);if(head)observed.observe(head);previousHead=head;}};
   new MutationObserver(watchDock).observe(app,{childList:true});watchDock();
 }
 if(window.visualViewport){

@@ -75,6 +75,12 @@ body.input-focused:has(.simple-workout) {
   padding-bottom: calc(24px + var(--safe-bottom));
 }
 
+/* The content owns its bottom clearance, including while a session is active
+   on Home. The measured nav height already includes the iPhone safe area. */
+body,body:has(.simple-workout),body.keyboard-open:has(.simple-workout),body.input-focused:has(.simple-workout) { padding-bottom:0; }
+#app { padding-bottom:calc(var(--nav-height,64px) + var(--undo-height,0px) + 24px); }
+body:has(.simple-workout) #app { padding-bottom:calc(24px + var(--safe-bottom)); }
+
 button, input, select, textarea {
   font: inherit;
   color: inherit;
@@ -1536,6 +1542,7 @@ button.order-row-text[aria-current="true"] strong {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.75);
 }
 body:has(.simple-workout) .undo-bar { bottom:calc(12px + var(--safe-bottom)); }
+.simple-workout>.undo-bar { position:static;inset:auto;width:100%;max-width:none;margin:8px 0 12px;box-shadow:none;flex-wrap:wrap; }
 .undo-bar > span {
   font-size: 0.875rem;
   overflow-wrap: anywhere;
@@ -1833,6 +1840,9 @@ dialog .modal-close:focus-visible { outline:2px solid var(--accent);outline-offs
 .muscle-bar-track { display:block;background:var(--input-bg);height:7px;border-radius:4px;overflow:hidden;margin-top:7px; }
 .muscle-bar-track i { display:block;height:100%;background:var(--accent); }
 .muscle-detail { margin:12px 0 0; }
+.muscle-detail>summary { cursor:pointer;min-height:44px;padding:10px 0;font-size:.8125rem;line-height:1.25rem;font-weight:600;overflow-wrap:anywhere; }
+.muscle-detail>summary span { color:var(--accent);font-weight:500; }
+.muscle-detail-list { padding:4px 0 8px; }
 .muscle-detail h3 { font-size:.875rem; }
 .muscle-config-list .text-btn { display:block;text-align:left;border-bottom:1px solid var(--line);width:100%; }
 .personal-record-row { display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 0;border-bottom:1px solid var(--line); }
@@ -1848,6 +1858,12 @@ dialog .modal-close:focus-visible { outline:2px solid var(--accent);outline-offs
 .setting-row select { max-width:7rem;min-width:6rem;padding:7px;font-size:1rem;min-height:44px; }
 .setting-row input[type=checkbox] { width:24px;height:24px;accent-color:var(--accent); }
 .catalog-settings-card>summary { gap:9px; }
+.equipment-row { display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line); }
+.equipment-row:first-child { border-top:0; }
+.equipment-copy { display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;overflow-wrap:anywhere; }
+.equipment-copy>strong { display:block;font-size:.875rem;line-height:1.25rem; }
+.equipment-copy>.config-caption { display:block;line-height:1.125rem;margin:0; }
+.equipment-row>.icon-btn { flex:0 0 44px;width:44px;min-width:44px;min-height:44px;align-self:center; }
 .backup-card .section-heading,.app-info-card .section-heading { margin:0;font-size:.875rem; }
 .backup-actions { display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:12px 0 8px; }
 .backup-actions .btn { font-size:.8125rem;padding:9px; }
@@ -1856,3 +1872,4 @@ dialog .modal-close:focus-visible { outline:2px solid var(--accent);outline-offs
 @container (max-width:16rem) { .setting-row { grid-template-columns:32px minmax(0,1fr); } .setting-row select { grid-column:2;width:100%;max-width:none;min-width:0; } .backup-actions { grid-template-columns:1fr; } }
 @container (max-width:14rem) { .journal-grid { grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px; } .journal-grid>.set-num { grid-column:1/-1;justify-content:start;min-height:24px; } .journal-grid .set-cell-label { display:block;font-size:.75rem; } .set-table-head { display:none; } .journal-grid .done { align-self:end; } .rest-dock-actions { flex:1 1 100%; } }
 @media(max-width:359px) { .workout-focus-mode { padding-right:calc(var(--rail-width) + 14px); } .history-card-head { flex-wrap:wrap; } .history-card-values { flex-direction:row;align-items:center;flex-wrap:wrap; } .program-heading-actions { gap:5px; } .compact-plan { gap:6px;padding:8px; } .compact-plan .controls { gap:0; } .compact-plan .icon-btn { width:36px;min-width:36px; } .action-tile { gap:5px;padding:8px; } }
+.simple-exercise,.set-block.is-current,.set-block.is-current .set-input,.completed-exercise-summary { scroll-margin-top:calc(max(72px,3rem,calc(var(--workout-head-height,44px) + 12px)) + var(--safe-top)); }
