@@ -50,18 +50,18 @@ body {
   min-height: 100%;
   min-height: 100dvh;
   padding-top: max(12px, env(safe-area-inset-top));
-  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  padding-bottom: calc(var(--nav-height, 78px) + 32px + env(safe-area-inset-bottom));
   -webkit-tap-highlight-color: transparent;
   font-size: 1rem;
   line-height: 1.5;
   font-weight: 400;
 }
 body:has(.simple-workout) {
-  padding-bottom: calc(168px + env(safe-area-inset-bottom));
+  padding-bottom: calc(var(--nav-height, 78px) + var(--dock-height, 64px) + 40px + env(safe-area-inset-bottom));
 }
 body.keyboard-open:has(.simple-workout),
 body.input-focused:has(.simple-workout) {
-  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  padding-bottom: calc(var(--nav-height, 78px) + 32px + env(safe-area-inset-bottom));
 }
 
 button, input, select, textarea {
@@ -924,20 +924,6 @@ select.field {
   opacity: 1;
 }
 
-.set-row-subactions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-  padding-left: 40px;
-}
-.set-row-subactions .text-btn {
-  min-height: 32px;
-  padding: 2px 6px;
-  font-size: 0.75rem;
-  line-height: 1rem;
-}
 .set-error {
   margin: 6px 0 0 40px;
   font-size: 0.875rem;
@@ -948,12 +934,18 @@ select.field {
 
 .simple-set-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
 }
 .simple-set-actions > * {
-  flex: 1;
+  flex: 1 1 8rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
+.simple-exercise { container-type:inline-size; }
+.set-cell { min-width:0;display:block; }
+.set-cell-label { display:none; }
 
 .quiet-effort {
   margin-top: 12px;
@@ -1017,11 +1009,12 @@ select.field {
 
 /* ---------- Stable Compact Timer Dock Above Bottom Nav ---------- */
 .rest-dock {
+  container-type: inline-size;
   position: fixed;
   z-index: 25;
   left: max(12px, env(safe-area-inset-left));
   right: max(12px, env(safe-area-inset-right));
-  bottom: calc(82px + env(safe-area-inset-bottom));
+  bottom: calc(var(--nav-height, 78px) + 16px + env(safe-area-inset-bottom));
   max-width: 480px;
   min-height: 64px;
   margin: 0 auto;
@@ -1037,6 +1030,15 @@ select.field {
 .rest-dock.is-active {
   border-color: var(--lime-line);
   background: var(--surface2);
+}
+.rest-dock.is-idle {
+  position: static;
+  min-height: 24px;
+  margin-top: 12px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
 }
 body.keyboard-open .rest-dock,
 body.input-focused .rest-dock {
@@ -1098,7 +1100,7 @@ body.input-focused .rest-dock {
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  min-height: var(--tap);
+  min-height: 24px;
   padding: 0 4px;
   font-size: 0.875rem;
   line-height: 1.25rem;
@@ -1109,10 +1111,7 @@ body.input-focused .rest-dock {
   font-weight: 500;
 }
 .rest-idle-next {
-  color: var(--text);
-  font-weight: 500;
-  text-align: right;
-  overflow-wrap: anywhere;
+  display: none;
 }
 
 /* Expanded Timer Modal (56 / 64 px, 600) */
@@ -1274,6 +1273,30 @@ body.input-focused .rest-dock {
   font-size: 0.75rem;
   line-height: 1rem;
   font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.nav-btn > span { max-width: 100%; }
+.set-options-row { display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid var(--line); }
+.set-options-row strong { flex:1 1 100%; }
+.order-move-buttons { display:flex;flex-direction:column;gap:4px;flex-shrink:0; }
+.set-type { min-width:48px;min-height:48px; }
+.simple-finish > .helper { text-align:center;margin:8px 0; }
+@container (max-width: 18rem) {
+  .simple-rest { flex-wrap:wrap; }
+  .rest-expand-btn { flex:1 1 100%;display:grid;grid-template-columns:minmax(0,1fr);gap:4px; }
+  .rest-kind-badge { overflow-wrap:normal; }
+  .rest-dock-actions { width:100%;justify-content:flex-end;flex-wrap:wrap; }
+}
+@container (max-width: 12rem) {
+  .goal-summary-main { flex:1 1 100%; }
+  .goal-apply-btn { width:100%; }
+  .quiet-effort summary { flex-wrap:wrap;gap:4px; }
+  .set-table-head { display:none; }
+  .set-grid { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+  .set-grid > .set-num { grid-column:1;grid-row:1; }
+  .set-grid > .done { grid-column:2;grid-row:1;justify-self:end; }
+  .set-cell { grid-row:2; }
+  .set-cell-label { display:block;font-size:0.75rem;line-height:1rem;color:var(--muted);margin-bottom:4px; }
 }
 .nav-btn .nav-icon {
   display: grid;

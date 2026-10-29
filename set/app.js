@@ -1,8 +1,8 @@
 import {PushNotifications,classifyPushState} from './js/push-notifications.js';
 import {muscleField} from './js/muscles.js';
 import {exerciseOrderForm,bindExerciseOrder,reorderExercises} from './js/exercise-order.js';
-import {compactTiming,restBarView} from './js/simple-views.js';
-import {focusExercise,upcomingExercise,replaceExercise,applyWarmup,warmupSuggestion,forecastSession,optionalSets,restAfterSet} from './js/workout-tools.js';
+import {compactTiming,setOptionsForm} from './js/simple-views.js';
+import {focusExercise,upcomingExercise,restDestination,replaceExercise,applyWarmup,warmupSuggestion,forecastSession,optionalSets,restAfterSet} from './js/workout-tools.js';
 import {equipmentFields,replacementForm,warmupForm,warmupRows,extrasForm} from './js/workout-tools-views.js';
 import {restDesign} from './js/design-views.js';
 import {barbellPlates} from './js/dashboard.js';
@@ -24,6 +24,8 @@ const navigation=document.getElementById('navigation');
 const repo=new Repository();
 let state,queue=Promise.resolve(),pending=0,failed=false,stale=false,toastHandle,draft=null,draftBaseline='',historyDraft=null,historyBaseline='',modalMode='',timerNotified=null,resultFile=null,resultURL=null;
 const ui={tab:'home',historyDays:0,historyMode:'list',progressDays:0,progressDetailsOpen:false,metric:'weight',exerciseId:null,offlineStatus:'Перевіряємо офлайн-готовність…',storageStatus:'Сховище на пристрої'};
+const pendingEdits=new Map();
+const fieldKey=x=>JSON.stringify([x.dataset.ex,x.dataset.set,x.dataset.field]);
 
 function updatePushStatus(info){
   Object.assign(ui,{pushStatus:info.message,pushConnected:info.connected,pushReady:info.ready,pushURL:info.url});
@@ -35,7 +37,7 @@ function updatePushStatus(info){
   if(badge||hint){
     const st=classifyPushState(ui);
     if(badge){badge.textContent=st.badge;badge.className='status-badge status-'+st.kind;}
-    if(hint)hint.textContent=st.hint+' Сигнал після відпочинку працює навіть зі згорнутим СЕТ.';
+    if(hint)hint.textContent=st.hint;
   }
   for(const [id,hidden] of [['pushEnable',info.connected||!info.ready],['pushTest',!info.connected],['pushDisable',!info.connected],['pushPairing',info.connected],['pushRetry',info.ready]]){
     const el=document.getElementById(id);if(el)el.hidden=hidden;
@@ -90,7 +92,7 @@ function updateFinishButtonDOM(){
   const unmarkedCount=w.exercises.reduce((n,e)=>n+e.sets.filter(s=>!s.done).length,0);
   finishBox.innerHTML=allDone
     ?button('finish-workout',icon('check')+'<span>Завершити тренування</span>','','btn block finish-primary')
-    :button('finish-workout','Завершити тренування достроково'+(unmarkedCount?' (не позначено '+unmarkedCount+')':''),'','btn alt block finish-secondary');
+    :button('finish-workout','Завершити достроково','','btn alt block finish-secondary')+(unmarkedCount?'<p class="helper">Не позначено підходів: '+unmarkedCount+'</p>':'');
 }
 
 function updateExerciseCardDOM(){
@@ -98,18 +100,47 @@ function updateExerciseCardDOM(){
   const w=state.session,focused=focusExercise(w,ui.focusId),index=w.exercises.indexOf(focused);
   const currentCard=app.querySelector('.simple-exercise');
   if(!focused||!currentCard){render();return;}
-  const activeEl=document.activeElement;
-  const focusSelector=activeEl?.dataset?.set&&activeEl?.dataset?.field?`[data-set="${activeEl.dataset.set}"][data-field="${activeEl.dataset.field}"]`:null;
-  const selStart=activeEl?.selectionStart,selEnd=activeEl?.selectionEnd;
   const y=window.scrollY;
-  currentCard.outerHTML=renderFocusedExercise(state,focused,index,w.exercises.length);
-  const dock=document.getElementById('restSlot');
-  if(dock)dock.outerHTML=restBarView(state);
+  const template=document.createElement('template');template.innerHTML=renderFocusedExercise(state,focused,index,w.exercises.length);
+  const nextCard=template.content.firstElementChild;
+  // Keep editable nodes attached: a completed transaction must not replace a
+  // newer keystroke that is still queued for storage.
+  const list=currentCard.querySelector('.exercise-sets-list'),nextList=nextCard.querySelector('.exercise-sets-list');
+  const existing=new Map([...list.children].map(row=>[row.dataset.setBlock,row]));
+  for(const [i,nextRow] of [...nextList.children].entries()){
+    const row=existing.get(nextRow.dataset.setBlock);
+    if(!row){list.insertBefore(nextRow,list.children[i]||null);continue;}
+    existing.delete(nextRow.dataset.setBlock);
+    if(list.children[i]!==row)list.insertBefore(row,list.children[i]||null);
+    row.className=nextRow.className;
+    for(const input of row.querySelectorAll('[data-field]')){
+      const fresh=[...nextRow.querySelectorAll('[data-field]')].find(x=>x.dataset.field===input.dataset.field);
+      if(!pendingEdits.has(fieldKey(input))&&!(document.activeElement===input&&input.value.replace(',','.')===fresh.value))input.value=fresh.value;
+    }
+    for(const selector of ['.set-num','.done']){
+      const target=row.querySelector(selector),fresh=nextRow.querySelector(selector);
+      for(const a of [...target.attributes])if(!fresh.hasAttribute(a.name))target.removeAttribute(a.name);
+      for(const a of fresh.attributes)target.setAttribute(a.name,a.value);
+      if(target.innerHTML!==fresh.innerHTML)target.innerHTML=fresh.innerHTML;
+    }
+  }
+  for(const row of existing.values())row.remove();
+  const replaceSection=selector=>{
+    const old=currentCard.querySelector(selector),fresh=nextCard.querySelector(selector);
+    if(old&&fresh){
+      for(const d of old.querySelectorAll('details[open]')){const counterpart=fresh.querySelector('details.'+d.classList[0]);if(counterpart)counterpart.open=true;}
+      if(old.matches('details')&&old.open)fresh.open=true;
+      if(old.outerHTML!==fresh.outerHTML)old.replaceWith(fresh);
+    }else if(old)old.remove();else if(fresh)currentCard.append(fresh);
+  };
+  for(const selector of ['.exercise-meta','.goal-summary-box','.first-set-coachmark','.quiet-effort','.next-exercise-callout'])replaceSection(selector);
+  const replaceButton=currentCard.querySelector('[data-action="replace-exercise"]');
+  if(replaceButton)replaceButton.disabled=nextCard.querySelector('[data-action="replace-exercise"]').disabled;
   updateFinishButtonDOM();
   updateWorkoutProgress();saveStatus();updateTimer();
-  if(focusSelector){
-    const restored=app.querySelector(focusSelector);
-    if(restored){restored.focus({preventScroll:true});try{if(selStart!=null)restored.setSelectionRange(selStart,selEnd);}catch{}}
+  if(modalMode==='set-options'){
+    const id=modalContent.querySelector('#set-options')?.dataset.id;
+    const e=state.session.exercises.find(e=>e.id===id);if(e)openModal(setOptionsForm(e),'set-options');
   }
   if(window.scrollY!==y)window.scrollTo(0,y);
 }
@@ -180,7 +211,8 @@ function syncHistoryDraft(){
   for(const x of modalContent.querySelectorAll('[data-history-note-ex]')){const e=historyDraft.exercises.find(e=>e.id===x.dataset.historyNoteEx);if(e)e.note=x.value;}
   for(const x of modalContent.querySelectorAll('[data-history-rir]')){const set=historyDraft.exercises.find(e=>e.id===x.dataset.ex)?.sets.find(s=>s.id===x.dataset.set);if(set)set.rir=x.value===''?null:Number(x.value);}
   const date=document.getElementById('history-date').value;
-  if(date){const startedAt=new Date(date);if(!Number.isNaN(startedAt.getTime())){const duration=Date.parse(historyDraft.finishedAt)-Date.parse(historyDraft.startedAt);historyDraft.startedAt=startedAt.toISOString();historyDraft.finishedAt=new Date(startedAt.getTime()+duration).toISOString();}}
+  const oldDate=new Date(Date.parse(historyDraft.startedAt)-new Date(historyDraft.startedAt).getTimezoneOffset()*60000).toISOString().slice(0,16);
+  if(date&&date!==oldDate){const startedAt=new Date(date);if(!Number.isNaN(startedAt.getTime())){const duration=Date.parse(historyDraft.finishedAt)-Date.parse(historyDraft.startedAt);historyDraft.startedAt=startedAt.toISOString();historyDraft.finishedAt=new Date(startedAt.getTime()+duration).toISOString();}}
   for(const input of modalContent.querySelectorAll('[data-set][data-field]')){const set=historyDraft.exercises.find(e=>e.id===input.dataset.ex)?.sets.find(s=>s.id===input.dataset.set);if(set)set[input.dataset.field]=input.value.replace(',','.');}
 }
 function isModalDirty(){
@@ -197,8 +229,8 @@ function closeModal(force=false){
 function editTemplate(id){
   const source=state.templates.find(t=>t.id===id);
   draft=source?{...clone(source),isNew:false,addName:''}:{id:uid(),name:'',day:new Date().getDay(),exercises:[],isNew:true,addName:''};
-  draftBaseline=JSON.stringify(draft);
   openModal(templateForm(draft,state),'template');
+  syncDraft();draftBaseline=JSON.stringify(draft);
 }
 function download(text,name,type='application/json'){const url=URL.createObjectURL(text instanceof Blob?text:new Blob([text],{type}));const link=document.createElement('a');link.href=url;link.download=name;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);}
 function backup(value=state,prefix='set-backup'){download(JSON.stringify({...value,exportedAt:new Date().toISOString()},null,2),`${prefix}-${new Date().toISOString().slice(0,10)}.json`);}
@@ -295,8 +327,9 @@ async function handleAction(b){
   if(action==='suggest-warmup'){await queue;openModal(warmupForm(state,sessionExercise(state,id)),'warmup');return;}
   if(action==='recalculate-warmup'){const base=document.getElementById('warmup-base'),step=document.getElementById('warmup-step');if(!base.reportValidity()||!step.reportValidity())return;document.getElementById('warmup-preview').innerHTML=warmupRows(warmupSuggestion(Number(base.value),Number(step.value)));return;}
   if(action==='review-extras'){await queue;openModal(extrasForm(state),'extras');return;}
-  if(action==='accept-goal'){await commit(s=>{const e=sessionExercise(s,id);applyGoal(e,suggestGoal(s,e));},{cardOnly:true,sessionOnly:true,undoLabel:'Підставлення цілі'});return;}
+  if(action==='accept-goal'){await commit(s=>{const e=sessionExercise(s,id);applyGoal(e,e.goal||suggestGoal(s,e));},{cardOnly:true,sessionOnly:true,undoLabel:'Підставлення цілі'});return;}
   if(action==='edit-goal'){await queue;openModal(goalForm(state,sessionExercise(state,id)),'goal');return;}
+  if(action==='set-options'){await queue;openModal(setOptionsForm(sessionExercise(state,id)),'set-options');return;}
   if(action==='easy-day'){await commit(s=>{s.session.easy=!s.session.easy;for(const e of s.session.exercises)delete e.goal;},{sessionOnly:true});return;}
   if(action==='add-warmup'){await commit(s=>{const e=sessionExercise(s,id);if(e.sets.length>=200)throw new Error('Максимум 200 підходів');const index=e.sets.findIndex(isWorking);e.sets.splice(index<0?e.sets.length:index,0,{id:uid(),type:'warmup',weight:'',reps:'',done:false});},{cardOnly:true,sessionOnly:true});return;}
   if(action==='remove-warmup'){await queue;const e=sessionExercise(state,b.dataset.ex),set=e.sets.find(s=>s.id===b.dataset.set);if(!set||set.type!=='warmup')return;if(e.sets.length===1)return toast('Залиш хоча б один підхід');if(set.done&&!confirm('Прибрати виконану розминку?'))return;await commit(s=>{const e=sessionExercise(s,b.dataset.ex);e.sets=e.sets.filter(x=>x.id!==b.dataset.set);},{cardOnly:true,sessionOnly:true,undoLabel:"Розминку прибрано"});return;}
@@ -307,7 +340,7 @@ async function handleAction(b){
   if(action==='copy-set'){await commit(s=>{const e=sessionExercise(s,b.dataset.ex),i=e.sets.findIndex(x=>x.id===b.dataset.set);if(i<1)return;const previous=e.sets.slice(0,i).filter(s=>(s.type==='warmup')===(e.sets[i].type==='warmup')).at(-1);if(!previous)return;delete e.sets[i].rir;Object.assign(e.sets[i],{weight:previous.weight,reps:previous.reps,done:false});},{cardOnly:true,sessionOnly:true,undoLabel:"Значення скопійовано"});return;}
   if(action==='dismiss-summary'){delete ui.finishedId;render();window.scrollTo(0,0);return;}
   if(action==='rest-focus'){await queue;openModal(restDesign(state,ui.focusId),'rest-focus');modal.classList.add('rest-dialog');updateTimer();updatePlates();return;}
-  if(action==='rest-continue'){await queue;const current=focusExercise(state.session,ui.focusId),next=state.restKind==='exercise'&&current&&workingSets(current).every(s=>s.done)?upcomingExercise(state.session,current.id):null;await commit(s=>{s.restEndsAt=null;s.restSetId=null;},{redraw:false,sessionOnly:true});if(next)ui.focusId=next.id;closeModal(true);render();return;}
+  if(action==='rest-continue'){await queue;const {next}=restDestination(state,ui.focusId);await commit(s=>{s.restEndsAt=null;s.restSetId=null;},{redraw:false,sessionOnly:true});if(next)ui.focusId=next.id;closeModal(true);render();return;}
   if(action==='rest-shift'){await commit(s=>{const now=Date.now(),before=Math.max(0,(s.restEndsAt||now)-now)/1000,seconds=Number(b.dataset.seconds);s.restEndsAt=now+Math.max(0,Math.min(86400,before+seconds))*1000;s.restDuration=Math.min(86400,Math.max(s.restDuration||s.restSeconds,Math.ceil((s.restEndsAt-now)/1000)));timerNotified=null;},{redraw:false,sessionOnly:true});updateTimer();return;}
   if(action==='new-template')return editTemplate();
   if(action==='preview-program'){await queue;openModal(programPreview(state),'program');return;}
@@ -378,7 +411,7 @@ async function handleAction(b){
   if(action==='delete-template'){if(confirm('Видалити план? Історія тренувань залишиться.')){await commit(s=>{s.templates=s.templates.filter(t=>t.id!==draft.id);},{undoLabel:"План видалено"});closeModal(true);}return;}
   if(action==='history-detail'){const w=state.history.find(w=>w.id===id);if(w)openModal(historyDetail(w),'history-detail');return;}
   if(action==='delete-history'){if(confirm('Видалити цей запис історії?')){await commit(s=>{s.history=s.history.filter(w=>w.id!==id);},{undoLabel:"Запис видалено"});closeModal(true);}return;}
-  if(action==='edit-history'){historyDraft=clone(state.history.find(w=>w.id===id));historyBaseline=JSON.stringify(historyDraft);openModal(historyEditor(historyDraft),'history-edit');return;}
+  if(action==='edit-history'){historyDraft=clone(state.history.find(w=>w.id===id));openModal(historyEditor(historyDraft),'history-edit');syncHistoryDraft();historyBaseline=JSON.stringify(historyDraft);return;}
   if(action==='history-remove-set'){syncHistoryDraft();const e=historyDraft.exercises.find(e=>e.id===b.dataset.ex);if(e.sets.length===1){if(!confirm('Прибрати вправу з цього запису?'))return;historyDraft.exercises=historyDraft.exercises.filter(x=>x.id!==e.id);}else e.sets=e.sets.filter(s=>s.id!==b.dataset.set);openModal(historyEditor(historyDraft),'history-edit');return;}
   if(action==='history-add-set'){syncHistoryDraft();const e=historyDraft.exercises.find(e=>e.id===id);if(e.sets.length>=200)return toast('Максимум 200 підходів');e.sets.push({id:uid(),weight:e.sets.at(-1)?.weight??0,reps:e.sets.at(-1)?.reps??8,done:true});openModal(historyEditor(historyDraft),'history-edit');return;}
   if(action==='muscle-select'){ui.muscleGroup=b.dataset.group;ui.progressDetailsOpen=true;const y=window.scrollY;render();window.scrollTo(0,y);return;}
@@ -399,6 +432,7 @@ app.addEventListener('input',event=>{
   }
   if(!x.matches('[data-set][data-field]'))return;
   const {ex,set,field}=x.dataset,value=x.value.replace(',','.');
+  const key=fieldKey(x),edit={value};pendingEdits.set(key,edit);
   x.classList.remove('is-invalid');
   const errEl=app.querySelector(`[data-set-error="${set}"]`);
   if(errEl){errEl.hidden=true;errEl.textContent='';}
@@ -407,7 +441,10 @@ app.addEventListener('input',event=>{
   btn?.classList.remove('yes');
   btn?.setAttribute('aria-pressed','false');
   btn?.setAttribute('aria-label',btn.getAttribute('aria-label')?.replace(': виконано',': позначити виконаним')||'Позначити виконаним');
-  commit(s=>{const target=sessionSet(s,ex,set);target[field]=value;target.done=false;delete target.rir;},{redraw:false,preserve:true,sessionOnly:true}).then(()=>updateFinishButtonDOM()).catch(()=>{});
+  commit(s=>{const target=sessionSet(s,ex,set);target[field]=value;target.done=false;delete target.rir;},{redraw:false,preserve:true,sessionOnly:true}).then(()=>{
+    if(pendingEdits.get(key)===edit)pendingEdits.delete(key);
+    if(ui.tab==='workout')updateExerciseCardDOM();
+  }).catch(()=>{});
 });
 
 app.addEventListener('change',event=>{
@@ -462,11 +499,10 @@ function updateTimer(){
   const target=document.getElementById('restTimer');if(target)target.textContent=formatClock(remaining(state.restEndsAt,state.restSeconds));
   const label=document.getElementById('restLabel');
   if(label){
-    const focused=state.session?focusExercise(state.session,ui.focusId):null;
-    const nextEx=focused?upcomingExercise(state.session,focused.id):null;
+    const nextEx=state.session?restDestination(state,ui.focusId).next:null;
     label.textContent=state.restEndsAt&&remaining(state.restEndsAt,state.restSeconds)===0
       ?'Відпочинок завершено'
-      :state.restKind==='exercise'
+      :state.restKind==='exercise'&&nextEx
         ?(nextEx?'Між вправами · Далі: '+nextEx.name:'Між вправами')
         :state.restKind==='warmup'?'Після розминки':'Між підходами';
   }
@@ -487,6 +523,17 @@ document.getElementById('noticeExport').addEventListener('click',()=>{if(state)e
 document.getElementById('noticeReload').addEventListener('click',()=>{if((pending||failed)&&!confirm('Є незбережені зміни. Спочатку збережи копію. Перезавантажити?'))return;location.reload();});
 
 // VisualViewport handler: keep active input unobstructed when soft keyboard opens
+if(typeof ResizeObserver!=='undefined'){
+  const observed=new ResizeObserver(()=>{
+    document.body.style.setProperty('--nav-height',navigation.getBoundingClientRect().height+'px');
+    const dock=document.getElementById('restSlot');
+    if(dock)document.body.style.setProperty('--dock-height',dock.getBoundingClientRect().height+'px');
+  });
+  observed.observe(navigation);
+  let previousDock;
+  const watchDock=()=>{const dock=document.getElementById('restSlot');if(dock!==previousDock){if(previousDock)observed.unobserve(previousDock);if(dock)observed.observe(dock);previousDock=dock;}};
+  new MutationObserver(watchDock).observe(app,{childList:true});watchDock();
+}
 if(window.visualViewport){
   const onViewport=()=>{
     const kbOpen=window.innerHeight-window.visualViewport.height>140;

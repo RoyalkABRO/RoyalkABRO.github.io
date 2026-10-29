@@ -4,9 +4,11 @@ const STORES=['meta','catalog','templates','workouts'];
 function completed(tx) {return new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error||new Error('Запис скасовано'));tx.onerror=()=>{};});}
 function request(req) {return new Promise((resolve,reject)=>{req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
 function freezeHistory(state){
-  if(Array.isArray(state?.history)&&!Object.isFrozen(state.history))Object.freeze(state.history);
+  const freeze=value=>{if(value&&typeof value==='object'&&!Object.isFrozen(value)){for(const child of Object.values(value))freeze(child);Object.freeze(value);}return value;};
+  freeze(state.history);freeze(state.templates);
   return state;
 }
+function snapshot(state){freezeHistory(state);return {...state,catalog:clone(state.catalog),session:clone(state.session)};}
 export class Repository {
   constructor(factory,legacy){
     this.revision=0;this.last=null;
@@ -37,11 +39,11 @@ export class Repository {
     this.revision=meta.revision;
     const ordered=(rows,ids)=>{const byId=new Map(rows.map(row=>[row.id,row]));return ids.map(id=>byId.get(id));};
     const value=normalize({...meta.value,catalog:ordered(catalog,meta.catalogOrder),templates:ordered(templates,meta.templateOrder),history:ordered(history,meta.historyOrder)});
-    this.last=clone(value);
+    this.last=snapshot(value);
     return freezeHistory(value);
   }
   async write(value, {sessionOnly=false}={}) {
-    if(sessionOnly&&this.last&&value.history===this.last.history&&value.templates===this.last.templates){
+    if(sessionOnly&&this.last&&value.history===this.last.history&&value.templates===this.last.templates&&this.last.catalog.every(e=>value.catalog.some(c=>c.id===e.id))){
       const next=normalizeMeta(value,this.last);
       const catalogChanged=JSON.stringify(next.catalog)!==JSON.stringify(this.last.catalog);
       const stores=catalogChanged?['meta','catalog']:['meta'];
@@ -84,7 +86,7 @@ export class Repository {
       } catch {tx.abort();}
     };
     try{await done;}catch(error){if(conflict) throw new Error('Дані змінені в іншому вікні. Експортуй незбережене й перезавантаж сторінку.');throw error;}
-    this.revision++;this.last=clone(next);freezeHistory(this.last);
+    this.revision++;this.last=snapshot(next);
     return freezeHistory(next);
   }
   async recoveryText() {try{return this.legacy?.getItem(LEGACY_KEY)||'';}catch{return '';}}

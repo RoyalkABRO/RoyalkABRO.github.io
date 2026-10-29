@@ -5,6 +5,11 @@ export const EQUIPMENT_FIELDS=[['seat','Сидіння'],['bench','Нахил л
 export function equipmentText(e){return EQUIPMENT_FIELDS.filter(([key])=>e.equipment?.[key]).map(([key,label])=>label+': '+e.equipment[key]).join(' · ');}
 export function focusExercise(session,selected){return session?.exercises.find(e=>e.id===selected)||session?.exercises.find(e=>e.sets.some(s=>!s.done))||session?.exercises[0]||null;}
 export function upcomingExercise(session,currentId){const es=session?.exercises||[],i=es.findIndex(e=>e.id===currentId);return es.slice(i+1).find(e=>e.sets.some(s=>!s.done))||es.slice(0,Math.max(0,i)).find(e=>e.sets.some(s=>!s.done))||null;}
+export function restDestination(state,focusId){
+ const current=focusExercise(state.session,focusId),work=current?workingSets(current):[];
+ const next=state.restKind==='exercise'&&work.length&&current.sets.every(s=>s.done)?upcomingExercise(state.session,current.id):null;
+ return {current,next};
+}
 export function warmupSuggestion(weight,step=2.5){
  if(!Number.isFinite(weight)||weight<=0||weight>10000||!Number.isFinite(step)||step<=0||step>1000)return [];
  const seen=new Set();return [[.4,8],[.6,5],[.8,3]].flatMap(([fraction,reps])=>{const load=Math.round(Math.floor((weight*fraction+1e-8)/step)*step*1000)/1000;if(load<=0||load>=weight||seen.has(load))return [];seen.add(load);return [{weight:load,reps}];});
