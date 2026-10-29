@@ -1,7 +1,7 @@
 import {PushNotifications,classifyPushState} from './js/push-notifications.js';
 import {muscleField} from './js/muscles.js';
 import {exerciseOrderForm,bindExerciseOrder,reorderExercises} from './js/exercise-order.js';
-import {compactTiming,setOptionsForm} from './js/simple-views.js';
+import {compactTiming,setOptionsForm,finishSectionView} from './js/simple-views.js';
 import {focusExercise,upcomingExercise,restDestination,replaceExercise,applyWarmup,warmupSuggestion,forecastSession,optionalSets,restAfterSet} from './js/workout-tools.js';
 import {equipmentFields,replacementForm,warmupForm,warmupRows,extrasForm} from './js/workout-tools-views.js';
 import {restDesign} from './js/design-views.js';
@@ -13,7 +13,7 @@ import {Repository} from './js/storage.js';
 import {fresh,normalize,clone,uid,getOrCreateExercise,validSet,startSession,finishSession,moveItem} from './js/model.js';
 import {renderView,renderNavigation,renderFocusedExercise,goalForm,shareProgramForm,templateForm,historyDetail,historyEditor,catalogList,esc,button,programPreview} from './js/views.js';
 import {programText} from './js/share.js';
-import {addPersonalProgram} from './js/programs.js';
+import {addPersonalProgram,onlyStarterPlans} from './js/programs.js';
 import {remaining,formatClock,unlockSound,beep} from './js/timer.js';
 import {setupPWA,checkOffline,requestPersistence} from './js/pwa.js';
 import {icon} from './js/icons.js';
@@ -23,7 +23,7 @@ const notice=document.getElementById('notice'),noticeText=document.getElementByI
 const navigation=document.getElementById('navigation');
 const repo=new Repository();
 let state,queue=Promise.resolve(),pending=0,failed=false,stale=false,toastHandle,draft=null,draftBaseline='',historyDraft=null,historyBaseline='',modalMode='',timerNotified=null,resultFile=null,resultURL=null;
-const ui={tab:'home',historyDays:0,historyMode:'list',progressDays:0,progressDetailsOpen:false,metric:'weight',exerciseId:null,offlineStatus:'Перевіряємо офлайн-готовність…',storageStatus:'Сховище на пристрої'};
+const ui={tab:'home',historyDays:0,historyMode:'list',historyDate:null,progressDays:0,progressDetailsOpen:false,metric:'weight',exerciseId:null,offlineStatus:'Перевіряємо офлайн-готовність…',storageStatus:'Сховище на пристрої'};
 const pendingEdits=new Map();
 const fieldKey=x=>JSON.stringify([x.dataset.ex,x.dataset.set,x.dataset.field]);
 
@@ -39,7 +39,7 @@ function updatePushStatus(info){
     if(badge){badge.textContent=st.badge;badge.className='status-badge status-'+st.kind;}
     if(hint)hint.textContent=st.hint;
   }
-  for(const [id,hidden] of [['pushEnable',info.connected||!info.ready],['pushTest',!info.connected],['pushDisable',!info.connected],['pushPairing',info.connected],['pushRetry',info.ready]]){
+  for(const [id,hidden] of [['pushEnable',info.connected||!info.ready],['pushTest',!info.connected],['pushDisable',!info.connected],['pushPairing',info.connected||!info.ready],['pushRetry',info.ready]]){
     const el=document.getElementById(id);if(el)el.hidden=hidden;
   }
 }
@@ -88,11 +88,7 @@ function updateWorkoutProgress(){
 function updateFinishButtonDOM(){
   const finishBox=document.getElementById('workoutFinishSection');
   if(!finishBox||!state?.session)return;
-  const w=state.session,allWorking=w.exercises.flatMap(workingSets),allDone=allWorking.length>0&&allWorking.every(s=>s.done);
-  const unmarkedCount=w.exercises.reduce((n,e)=>n+e.sets.filter(s=>!s.done).length,0);
-  finishBox.innerHTML=allDone
-    ?button('finish-workout',icon('check')+'<span>Завершити тренування</span>','','btn block finish-primary')
-    :button('finish-workout','Завершити достроково','','btn alt block finish-secondary')+(unmarkedCount?'<p class="helper">Не позначено підходів: '+unmarkedCount+'</p>':'');
+  finishBox.innerHTML=finishSectionView(state);
 }
 
 function updateExerciseCardDOM(){
@@ -117,7 +113,7 @@ function updateExerciseCardDOM(){
       const fresh=[...nextRow.querySelectorAll('[data-field]')].find(x=>x.dataset.field===input.dataset.field);
       if(!pendingEdits.has(fieldKey(input))&&!(document.activeElement===input&&input.value.replace(',','.')===fresh.value))input.value=fresh.value;
     }
-    for(const selector of ['.set-num','.done']){
+    for(const selector of ['.set-num','.previous-set','.done']){
       const target=row.querySelector(selector),fresh=nextRow.querySelector(selector);
       for(const a of [...target.attributes])if(!fresh.hasAttribute(a.name))target.removeAttribute(a.name);
       for(const a of fresh.attributes)target.setAttribute(a.name,a.value);
@@ -161,7 +157,7 @@ function render(){
     const active=tab.dataset.tab===current;tab.classList.toggle('active',active);
     if(active)tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');
   }
-  navigation.hidden=false;updateWorkoutProgress();saveStatus();updateTimer();syncWakeLock();
+  navigation.hidden=ui.tab==='workout'&&Boolean(state?.session);updateWorkoutProgress();saveStatus();updateTimer();syncWakeLock();
   if(focusSelector){
     const restored=app.querySelector(focusSelector);
     if(restored){restored.focus({preventScroll:true});try{if(selStart!=null)restored.setSelectionRange(selStart,selEnd);}catch{}}
@@ -280,12 +276,13 @@ function showSetFieldError(exId,setId,setObj){
   if(block){
     const field=!wValid?'weight':'reps';
     const input=block.querySelector(`[data-field="${field}"]`);
-    if(input){input.classList.add('is-invalid');input.focus();}
+    if(input){input.classList.add('is-invalid');input.setAttribute('aria-invalid','true');input.focus();}
   }
 }
 
 async function handleAction(b){
   const action=b.dataset.action,id=b.dataset.id;unlockSound();
+  if(action==='workout-home'){await queue;ui.tab='home';render();window.scrollTo(0,0);return;}
   if(action.startsWith('push-')){if(b.dataset.busy)return;b.dataset.busy='1';b.disabled=true;try{
     if(action==='push-enable'){const code=document.getElementById('pushPairingCode')?.value||'';await pushNotifications.enable(code);const field=document.getElementById('pushPairingCode');if(field)field.value='';await queue;syncPush();}
     if(action==='push-connect'){await pushNotifications.init();syncPush();}
@@ -295,8 +292,9 @@ async function handleAction(b){
 
   if(action==='tab'){await queue;if(window.scrollY)window.scrollTo(0,0);ui.tab=b.dataset.tab;render();if(window.scrollY)window.scrollTo(0,0);return;}
   if(action==='resume'){if(window.scrollY)window.scrollTo(0,0);ui.tab='workout';render();return;}
-  if(action==='history-mode'){ui.historyMode=b.dataset.mode;render();return;}
-  if(action==='calendar-month'){ui.historyMode='calendar';const base=ui.calendarMonth?new Date(ui.calendarMonth+'-01T12:00:00'):new Date();const month=new Date(base.getFullYear(),base.getMonth()+Number(b.dataset.direction),1);ui.calendarMonth=month.getFullYear()+'-'+String(month.getMonth()+1).padStart(2,'0');render();return;}
+  if(action==='history-mode'){ui.historyMode=b.dataset.mode;ui.historyDate=null;render();return;}
+  if(action==='history-day'){ui.historyDate=ui.historyDate===b.dataset.date?null:b.dataset.date;render();return;}
+  if(action==='calendar-month'){ui.historyMode='calendar';ui.historyDate=null;const base=ui.calendarMonth?new Date(ui.calendarMonth+'-01T12:00:00'):new Date();const month=new Date(base.getFullYear(),base.getMonth()+Number(b.dataset.direction),1);ui.calendarMonth=month.getFullYear()+'-'+String(month.getMonth()+1).padStart(2,'0');render();return;}
   if(action==='export-csv'){await queue;download(historyCSV(state.history),'set-history-'+new Date().toISOString().slice(0,10)+'.csv','text/csv;charset=utf-8');return;}
   if(action==='result-card')return showResultCard(id);
   if(action==='save-result'){if(resultFile)download(resultFile,resultFile.name);return;}
@@ -391,7 +389,6 @@ async function handleAction(b){
     const completedId=state.session.id;
     await commit(finishSession,{redraw:false});
     ui.finishedId=completedId;if(window.scrollY)window.scrollTo(0,0);ui.tab='history';render();
-    toast('Тренування успішно збережено на пристрої');
     return;
   }
   if(action==='cancel-workout'){if(confirm('Скасувати поточне тренування та видалити введені результати?')){await commit(s=>{s.session=null;s.restEndsAt=null;},{redraw:false,sessionOnly:true,undoLabel:'Тренування скасовано'});if(window.scrollY)window.scrollTo(0,0);ui.tab='home';render();}return;}
@@ -434,6 +431,7 @@ app.addEventListener('input',event=>{
   const {ex,set,field}=x.dataset,value=x.value.replace(',','.');
   const key=fieldKey(x),edit={value};pendingEdits.set(key,edit);
   x.classList.remove('is-invalid');
+  x.removeAttribute('aria-invalid');
   const errEl=app.querySelector(`[data-set-error="${set}"]`);
   if(errEl){errEl.hidden=true;errEl.textContent='';}
   const row=x.closest('.set-grid'),btn=row?.querySelector('.done'),block=x.closest('.set-block');
@@ -456,7 +454,7 @@ app.addEventListener('change',event=>{
   if(x.id==='rest-duration')commit(s=>{s.restSeconds=Number(x.value);},{redraw:false,sessionOnly:true}).catch(()=>{});
   if(x.id==='progress-ex'){ui.exerciseId=x.value;render();}
   if(x.id==='progress-period'){ui.progressDays=Number(x.value);render();}
-  if(x.id==='history-period'){ui.historyDays=Number(x.value);render();}
+  if(x.id==='history-period'){ui.historyDays=Number(x.value);ui.historyDate=null;render();}
   if(x.id==='backup-file')importBackup(x.files[0]);
 });
 app.addEventListener('toggle',event=>{
@@ -471,7 +469,7 @@ modal.addEventListener('submit',event=>{event.preventDefault();const form=event.
   if(form.id==='warmup-form'){const rows=[...form.querySelectorAll('.warmup-preview-row')].map(row=>({weight:Number(row.querySelector('[data-warmup-weight]').value),reps:Number(row.querySelector('[data-warmup-reps]').value)}));await commit(s=>applyWarmup(sessionExercise(s,form.dataset.id),rows),{cardOnly:true,sessionOnly:true,undoLabel:'Розминку додано'});closeModal(true);}
   if(form.id==='extras-form'){const rows=[...form.querySelectorAll('[data-extra-ex]:checked')].map(x=>({ex:x.dataset.extraEx,id:x.value}));if(!rows.length)return;await commit(s=>{const allowed=optionalSets(s.session);for(const row of rows){if(!allowed.some(x=>x.exerciseId===row.ex&&x.setId===row.id))throw Error('Список підходів змінився. Відкрий його ще раз.');const e=sessionExercise(s,row.ex),index=workingSets(e).findIndex(x=>x.id===row.id);e.sets=e.sets.filter(x=>x.id!==row.id);if(e.goal)e.goal.sets.splice(index,1);}},{cardOnly:true,sessionOnly:true,undoLabel:'Додаткові підходи прибрано'});closeModal(true);}
   if(form.id==='goal-form'){const sets=[...form.querySelectorAll('.goal-input-row')].map(row=>({weight:Number(row.querySelector('[data-goal-weight]').value),reps:Number(row.querySelector('[data-goal-reps]').value)}));await commit(s=>applyGoal(sessionExercise(s,form.dataset.id),{sets,mode:'manual',reason:'Власна ціль на це заняття.'}),{cardOnly:true,sessionOnly:true});closeModal(true);}
-  if(form.id==='template-form'){syncDraft();const saved=clone(draft);await commit(s=>{const exercises=saved.exercises.map(e=>({...e,exerciseId:e.exerciseId||getOrCreateExercise(s,e.name).id}));const t={id:saved.id,name:saved.name.trim(),day:saved.day,exercises};const index=s.templates.findIndex(x=>x.id===t.id);if(index<0)s.templates.push(t);else s.templates[index]=t;});closeModal(true);}
+  if(form.id==='template-form'){syncDraft();const saved=clone(draft);await commit(s=>{const replaceStarters=saved.isNew&&onlyStarterPlans(s);const exercises=saved.exercises.map(e=>({...e,exerciseId:e.exerciseId||getOrCreateExercise(s,e.name).id}));const t={id:saved.id,name:saved.name.trim(),day:saved.day,exercises};const index=s.templates.findIndex(x=>x.id===t.id);if(index<0){if(replaceStarters)s.templates=[];s.templates.push(t);}else s.templates[index]=t;});closeModal(true);}
   if(form.id==='session-ex-form'){const name=document.getElementById('session-ex-name').value;let addedId=null;await commit(s=>{if(s.session.exercises.length>=200)throw new Error('Максимум 200 вправ');const exercise=getOrCreateExercise(s,name);addedId=uid();s.session.exercises.push({id:addedId,exerciseId:exercise.id,name:exercise.name,...(exercise.note!==undefined?{note:exercise.note}:{}),targetSets:4,...(exercise.weightStep?{weightStep:exercise.weightStep}:{}),...(exercise.weightBasis?{weightBasis:exercise.weightBasis}:{}),...(exercise.equipment?{equipment:clone(exercise.equipment)}:{}),sets:Array.from({length:4},()=>({id:uid(),weight:'',reps:'',done:false}))});},{redraw:false,sessionOnly:true});if(addedId)ui.focusId=addedId;closeModal(true);render();}
   if(form.id==='history-form'){syncHistoryDraft();const saved=clone(historyDraft);await commit(s=>{const index=s.history.findIndex(w=>w.id===saved.id);s.history[index]=saved;});closeModal(true);}
   if(form.id==='rename-form'){const name=document.getElementById('exercise-new-name').value.trim().replace(/\s+/g,' '),id=form.dataset.id;await commit(s=>{const existing=getOrCreateExercise(clone(s),name);if(existing.id!==id&&s.catalog.some(e=>e.id===existing.id))throw new Error('Вправа з такою назвою вже є. Обери іншу назву.');const catalog=s.catalog.find(e=>e.id===id);catalog.name=name;const oldStep=catalog.weightStep,oldBasis=catalog.weightBasis;const muscle=document.getElementById('exercise-muscle').value;if(muscle)catalog.muscleGroup=muscle;else delete catalog.muscleGroup;catalog.equipment=Object.fromEntries([...form.querySelectorAll('[data-equipment]')].map(x=>[x.dataset.equipment,x.value.trim()]).filter(([,v])=>v));const step=document.getElementById('exercise-weight-step').value;if(step==='')delete catalog.weightStep;else catalog.weightStep=Number(step);catalog.weightBasis=document.getElementById('exercise-weight-basis').value;for(const e of s.session?.exercises||[])if(e.exerciseId===id){e.name=name;e.equipment=clone(catalog.equipment);e.weightBasis=catalog.weightBasis;if(catalog.weightStep)e.weightStep=catalog.weightStep;else delete e.weightStep;if(oldStep!==catalog.weightStep||oldBasis!==catalog.weightBasis)delete e.goal;}for(const t of s.templates)for(const e of t.exercises)if(e.exerciseId===id)e.name=name;});closeModal(true);}
@@ -497,6 +495,8 @@ function updateTimer(){
   }
   document.title=state.restEndsAt>Date.now()?'('+formatClock(remaining(state.restEndsAt,state.restSeconds))+') СЕТ':'СЕТ';
   const target=document.getElementById('restTimer');if(target)target.textContent=formatClock(remaining(state.restEndsAt,state.restSeconds));
+  const meter=document.getElementById('restMeter');
+  if(meter)meter.style.width=(Math.min(1,remaining(state.restEndsAt,0)/Math.max(1,state.restDuration||state.restSeconds))*100)+'%';
   const label=document.getElementById('restLabel');
   if(label){
     const nextEx=state.session?restDestination(state,ui.focusId).next:null;

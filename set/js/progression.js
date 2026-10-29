@@ -1,5 +1,6 @@
 // Pure training guidance; suggestions never change a plan or logged results.
 import {newestFirst} from './history-index.js';
+import {estimated1RM} from './stats.js';
 export const isWorking = s => s.type !== 'warmup';
 export const workingSets = e => e.sets.filter(isWorking);
 export const setLabel = (e,index) => {const warm=e.sets[index].type==='warmup';return (warm?'Р':'')+e.sets.slice(0,index+1).filter(s=>(s.type==='warmup')===warm).length;};
@@ -32,6 +33,12 @@ export function exerciseComparison(history,exerciseId,metric='weight'){
  const entries=exerciseHistory(history,exerciseId);
  if(entries.length<2)return '';
  const curr=entries[0].sets,prev=entries[1].sets;
+ if(metric==='e1rm'){
+  const c=Math.max(0,...curr.map(estimated1RM)),p=Math.max(0,...prev.map(estimated1RM));
+  if(!c||!p)return 'Для порівняння оцінки максимуму потрібні два заняття з підходами на 1–12 повторень і додатковою вагою.';
+  const diff=Math.round((c-p)*10)/10;
+  return diff===0?'Оцінка максимуму без змін':`Оцінка максимуму ${diff>0?'+':''}${diff.toLocaleString('uk-UA')} кг до попереднього заняття`;
+ }
  if(metric==='volume'){
   const cv=Math.round(curr.reduce((n,s)=>n+Number(s.weight)*Number(s.reps),0)),pv=Math.round(prev.reduce((n,s)=>n+Number(s.weight)*Number(s.reps),0)),diff=cv-pv;
   return diff===0?`Обсяг як минулого разу (${cv.toLocaleString('uk-UA')} кг)`:`Обсяг ${diff>0?'+':''}${diff.toLocaleString('uk-UA')} кг до попереднього заняття (${pv.toLocaleString('uk-UA')} → ${cv.toLocaleString('uk-UA')} кг)`;
