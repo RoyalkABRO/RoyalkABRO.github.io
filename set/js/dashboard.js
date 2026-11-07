@@ -29,7 +29,7 @@ export function workoutSummary(history,w){
  const total=sets.length,focus=w.exercises.map(e=>({name:e.name,count:workingSets(e).length})).filter(e=>e.count).map(e=>({...e,percent:e.count/Math.max(1,total)*100}));
  return {volume:volume(w),sets:total,minutes:Math.max(1,Math.round((Date.parse(w.finishedAt)-Date.parse(w.startedAt))/60000)),targets,met,goalPercent:targets?Math.round(met/targets*100):null,prs,focus};
 }
-export function nextSet(session){if(!session)return null;for(const e of session.exercises){const s=e.sets.find(s=>!s.done);if(s){const index=workingSets(e).indexOf(s);return {exercise:e,set:s,index:e.sets.indexOf(s),target:isWorking(s)?e.goal?.sets[index]:null};}}return null;}
+export function nextSet(session){if(!session)return null;for(const e of session.exercises){const s=e.sets.find(s=>!s.done&&!s.skipped);if(s){const index=workingSets(e).indexOf(s);return {exercise:e,set:s,index:e.sets.indexOf(s),target:isWorking(s)?e.goal?.sets[index]:null};}}return null;}
 export function barbellPlates(weight,bar=20){if(!Number.isFinite(weight)||!Number.isFinite(bar)||bar<=0||weight<bar)return null;let rest=Math.round((weight-bar)*100)/200;const plates=[];for(const p of [25,20,15,10,5,2.5,1.25])while(rest>=p-0.00001){plates.push(p);rest-=p;}return {plates,remainder:Math.max(0,Math.round(rest*200)/100)};}
 const factsCache=new WeakMap();
 export function historyFacts(history){

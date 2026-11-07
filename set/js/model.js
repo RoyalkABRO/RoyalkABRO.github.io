@@ -18,7 +18,7 @@ const date = x => typeof x === 'string' && Number.isFinite(Date.parse(x));
 const list = (x,max) => Array.isArray(x) && x.length <= max;
 const unique = xs => new Set(xs.map(x=>x.id)).size === xs.length;
 export function validSet(s, completed=false) {
-  if (!object(s) || !id(s.id) || typeof s.done !== 'boolean' || (s.type!==undefined&&!['working','warmup'].includes(s.type)) || (s.rir!==undefined&&![null,0,1,2].includes(s.rir))) return false;
+  if (!object(s) || !id(s.id) || typeof s.done !== 'boolean' || (s.skipped!==undefined&&(typeof s.skipped!=='boolean'||(s.skipped&&s.done))) || (s.type!==undefined&&!['working','warmup'].includes(s.type)) || (s.rir!==undefined&&![null,0,1,2].includes(s.rir))) return false;
   if (completed || s.done) return /^(?:\d+(?:\.\d*)?|\.\d+)$/.test(String(s.weight)) && Number.isFinite(Number(s.weight)) && Number(s.weight)>=0 && Number(s.weight)<=10000 && /^\d+$/.test(String(s.reps)) && Number.isInteger(Number(s.reps)) && Number(s.reps)>0 && Number(s.reps)<=1000;
   return ['string','number'].includes(typeof s.weight) && ['string','number'].includes(typeof s.reps) && String(s.weight).length<=24 && String(s.reps).length<=24;
 }
@@ -71,7 +71,7 @@ export function normalize(raw) {
       const targets={...trainingConfig(e),...goalData(e)};if(e.replacementFor!==undefined){const r=e.replacementFor;if(!object(r)||!id(r.exerciseId)||!text(r.name,90)||!out.catalog.some(c=>c.id===r.exerciseId))fail('Некоректна заміна вправи');targets.replacementFor={exerciseId:r.exerciseId,name:r.name};}
       if(e.targetSets!==undefined){if(!Number.isInteger(e.targetSets)||e.targetSets<1||e.targetSets>200)fail('Некоректна кількість підходів');targets.targetSets=e.targetSets;}
       if(e.targetReps!==undefined){if(!Number.isInteger(e.targetReps)||e.targetReps<1||e.targetReps>1000)fail('Некоректна ціль повторень');Object.assign(targets,{targetReps:e.targetReps},repOptions(e));}
-      return {id:e.id,exerciseId:exerciseId(e),name:e.name.trim(),...note(e.note),...targets,sets:e.sets.map(s=>({id:s.id,weight:completed?Number(s.weight):s.weight,reps:completed?Number(s.reps):s.reps,done:completed?true:s.done,...(s.type!==undefined?{type:s.type}:{}),...(s.rir!==undefined?{rir:s.rir}:{})}))};
+      return {id:e.id,exerciseId:exerciseId(e),name:e.name.trim(),...note(e.note),...targets,sets:e.sets.map(s=>({id:s.id,weight:completed?Number(s.weight):s.weight,reps:completed?Number(s.reps):s.reps,done:completed?true:s.done,...(s.skipped&&!completed?{skipped:true}:{}),...(s.type!==undefined?{type:s.type}:{}),...(s.rir!==undefined?{rir:s.rir}:{})}))};
     });
     if (completed&&!exercises.length) fail('Порожній запис історії');
     return {id:w.id,templateId:w.templateId,title:w.title.trim(),startedAt:w.startedAt,...(completed&&w.goalProgress?{goalProgress:{...w.goalProgress}}:{}),...note(w.note),...(w.easy!==undefined?{easy:w.easy===true}:{}),...(completed?{finishedAt:w.finishedAt}:{}),exercises};
@@ -115,7 +115,7 @@ export function normalizeSession(raw, catalog) {
     if(e.replacementFor!==undefined){const r=e.replacementFor;if(!object(r)||!id(r.exerciseId)||!text(r.name,90)||!catalog.some(c=>c.id===r.exerciseId))fail('Некоректна заміна вправи');targets.replacementFor={exerciseId:r.exerciseId,name:r.name};}
     if(e.targetSets!==undefined){if(!Number.isInteger(e.targetSets)||e.targetSets<1||e.targetSets>200)fail('Некоректна кількість підходів');targets.targetSets=e.targetSets;}
     if(e.targetReps!==undefined){if(!Number.isInteger(e.targetReps)||e.targetReps<1||e.targetReps>1000)fail('Некоректна ціль повторень');Object.assign(targets,{targetReps:e.targetReps},repOptions(e));}
-    return {id:e.id,exerciseId:e.exerciseId,name:e.name.trim(),...note(e.note),...targets,sets:e.sets.map(s=>({id:s.id,weight:s.weight,reps:s.reps,done:s.done,...(s.type!==undefined?{type:s.type}:{}),...(s.rir!==undefined?{rir:s.rir}:{})}))};
+    return {id:e.id,exerciseId:e.exerciseId,name:e.name.trim(),...note(e.note),...targets,sets:e.sets.map(s=>({id:s.id,weight:s.weight,reps:s.reps,done:s.done,...(s.skipped?{skipped:true}:{}),...(s.type!==undefined?{type:s.type}:{}),...(s.rir!==undefined?{rir:s.rir}:{})}))};
   });
   return {id:raw.id,templateId:raw.templateId,title:raw.title.trim(),startedAt:raw.startedAt,...note(raw.note),...(raw.easy!==undefined?{easy:raw.easy===true}:{}),exercises};
 }

@@ -1,6 +1,7 @@
 // Pure training guidance; suggestions never change a plan or logged results.
 import {newestFirst} from './history-index.js';
 import {estimated1RM} from './stats.js';
+export const isPending = s=>!s.done&&!s.skipped;
 export const isWorking = s => s.type !== 'warmup';
 export const workingSets = e => e.sets.filter(isWorking);
 export const setLabel = (e,index) => {const warm=e.sets[index].type==='warmup';return (warm?'Р':'')+e.sets.slice(0,index+1).filter(s=>(s.type==='warmup')===warm).length;};

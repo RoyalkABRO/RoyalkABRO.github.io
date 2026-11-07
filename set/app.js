@@ -1,3 +1,5 @@
+import {localDay} from './js/stats.js';
+import {sessionSummary,finishPrompt} from './js/ux30.js';
 import {PushNotifications,classifyPushState} from './js/push-notifications.js';
 import {muscleField} from './js/muscles.js';
 import {exerciseOrderForm,bindExerciseOrder,reorderExercises} from './js/exercise-order.js';
@@ -21,7 +23,7 @@ import {icon} from './js/icons.js';
 const app=document.getElementById('app'),modal=document.getElementById('modal'),modalContent=document.getElementById('modalContent');
 const notice=document.getElementById('notice'),noticeText=document.getElementById('noticeText');
 const navigation=document.getElementById('navigation');
-const undoBar=document.getElementById('undoBar');
+const undoBar=document.getElementById('undoBar'),workoutProgress=document.getElementById('workoutProgress');
 const repo=new Repository();
 let state,queue=Promise.resolve(),pending=0,failed=false,stale=false,toastHandle,draft=null,draftBaseline='',historyDraft=null,historyBaseline='',modalMode='',timerNotified=null,resultFile=null,resultURL=null;
 const ui={tab:'home',historyDays:0,historyMode:'list',historyDate:null,progressDays:0,progressDetailsOpen:false,metric:'weight',exerciseId:null,offlineStatus:'Перевіряємо офлайн-готовність…',storageStatus:'Сховище на пристрої'};
@@ -84,9 +86,9 @@ function updateWorkoutProgress(){
   rail.setAttribute('aria-valuetext',done+' з '+total+' робочих підходів · '+percent+'%');
   rail.querySelector('.workout-progress-percent').textContent=percent+'%';
   const exercises=state?.session?.exercises||[],focused=focusExercise(state?.session,ui.focusId);
-  rail.querySelector('.workout-progress-segments').innerHTML=exercises.map(e=>{const work=workingSets(e),done=work.filter(s=>s.done).length,ratio=work.length?done/work.length:0;return '<span class="rail-segment '+(ratio===1?'is-done':'')+' '+(e.id===focused?.id?'current':'')+'" title="'+esc(e.name)+': '+done+'/'+work.length+'"><i style="height:'+ratio*100+'%"></i></span>';}).join('');
+  rail.querySelector('.workout-progress-segments').innerHTML=exercises.map(e=>{const work=workingSets(e),done=work.filter(s=>s.done).length,ratio=work.length?done/work.length:0;return '<span class="rail-segment '+(ratio===1?'is-done':'')+' '+(e.id===focused?.id?'current':'')+'" title="'+esc(e.name)+': '+done+'/'+work.length+'"><i style="--segment-progress:'+ratio+';width:'+ratio*100+'%;height:'+ratio*100+'%"></i></span>';}).join('');
   const summary=document.getElementById('workoutProgressSummary');
-  if(summary)summary.textContent=total?done+' / '+total+' робочих підходів':'Додай робочі підходи';
+  if(summary)summary.textContent=total?'Виконано '+done+' / '+total+' робочих підходів':'Додай робочі підходи';
 }
 
 function updateFinishButtonDOM(){
@@ -153,8 +155,9 @@ function render(){
   if(state?.session&&state.focusWorkout)ui.focusId=focusExercise(state.session,ui.focusId)?.id;
   // Keep the same undo node across renders, immediately before the rest dock.
   // CSS and measured dock height keep it above the fixed dock or in flow.
-  undoBar.remove();
+  undoBar.remove();workoutProgress.remove();
   app.innerHTML=renderView(state,ui);
+  const mount=document.getElementById('progressMount');if(mount)mount.append(workoutProgress);else document.getElementById('toast').before(workoutProgress);
   const workoutDock=document.getElementById('restSlot');
   if(workoutDock)workoutDock.before(undoBar);else document.getElementById('toast').before(undoBar);
   if(ui.tab==='workout'&&state?.session){
@@ -198,7 +201,17 @@ function commit(mutator,{redraw=true,cardOnly=false,preserve=false,undoLabel=nul
   queue=task.catch(()=>{});return task;
 }
 
-function openModal(html,mode){modal.classList.toggle('action-sheet',mode==='workout-menu');modalContent.innerHTML=html;modalMode=mode;if(!modal.open)modal.showModal();}
+const confirmDialog=document.getElementById('confirmDialog');let pendingConfirmation=null;
+function requestConfirmation({title='Підтвердити дію?',message,accept='Підтвердити',decline='Залишити',danger=false}){
+ if(pendingConfirmation)return pendingConfirmation.promise;
+ document.getElementById('confirmTitle').textContent=title;document.getElementById('confirmMessage').textContent=message;
+ const yes=document.getElementById('confirmAccept'),no=document.getElementById('confirmDecline');yes.textContent=accept;no.textContent=decline;yes.className='btn block'+(danger?' danger':'');yes.disabled=false;no.disabled=false;
+ let resolve;const promise=new Promise(r=>resolve=r);pendingConfirmation={promise,resolve};confirmDialog.showModal();no.focus();return promise;
+}
+function resolveConfirmation(value){const current=pendingConfirmation;if(!current)return;pendingConfirmation=null;confirmDialog.close();current.resolve(value);}
+confirmDialog.addEventListener('cancel',e=>{e.preventDefault();resolveConfirmation(false)});
+confirmDialog.addEventListener('click',e=>{if(e.target.closest('#confirmAccept'))resolveConfirmation(true);if(e.target.closest('#confirmDecline'))resolveConfirmation(false)});
+function openModal(html,mode){modal.classList.toggle('action-sheet',mode==='workout-menu');modalContent.innerHTML=html;modalMode=mode;const heading=modalContent.querySelector('h2');if(heading){heading.id='modalHeading';modal.setAttribute('aria-labelledby','modalHeading');}if(!modal.open)modal.showModal();}
 function syncDraft(){
   if(!draft)return;const name=document.getElementById('template-name');if(!name)return;
   draft.name=name.value;draft.day=Number(document.getElementById('template-day').value);draft.addName=document.getElementById('template-add-name').value;
@@ -226,9 +239,9 @@ function isModalDirty(){
   if(modalMode==='history-edit'&&historyDraft){syncHistoryDraft();return JSON.stringify(historyDraft)!==historyBaseline;}
   return false;
 }
-function closeModal(force=false){
+async function closeModal(force=false){
   orderCleanup?.();orderCleanup=null;modal.classList.remove('rest-dialog');
-  if(!force&&isModalDirty()&&!confirm('Закрити редактор без збереження внесених змін?'))return;
+  if(!force&&isModalDirty()&&!await requestConfirmation({message:'Закрити редактор без збереження внесених змін?',accept:'Підтвердити',decline:'Залишити'}))return;
   modal.close();if(resultURL)URL.revokeObjectURL(resultURL);resultURL=null;resultFile=null;
   modalContent.innerHTML='';modalMode='';draft=null;draftBaseline='';historyDraft=null;historyBaseline='';
 }
@@ -241,7 +254,7 @@ function editTemplate(id){
 function download(text,name,type='application/json'){const url=URL.createObjectURL(text instanceof Blob?text:new Blob([text],{type}));const link=document.createElement('a');link.href=url;link.download=name;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);}
 function backup(value=state,prefix='set-backup'){download(JSON.stringify({...value,exportedAt:new Date().toISOString()},null,2),`${prefix}-${new Date().toISOString().slice(0,10)}.json`);}
 async function exportBackup(){await queue;backup();toast(failed?'Копія містить також незбережені зміни':'Файл резервної копії підготовлено');if(!failed&&!stale)await commit(s=>{s.lastBackupAt=new Date().toISOString();},{redraw:ui.tab==='settings',sessionOnly:true});}
-async function importBackup(file){if(!file)return;try{if(file.size>30*1024*1024)throw new Error('Файл більший за 30 МБ');const incoming=normalize(JSON.parse(await file.text()));await queue;if(!confirm(`Відновити ${incoming.templates.length} планів і ${incoming.history.length} тренувань? Поточні дані будуть замінені. Спочатку завантажиться їхня резервна копія.`))return;backup(state,'set-before-import');await commit(s=>{Object.keys(s).forEach(key=>delete s[key]);Object.assign(s,incoming);});ui.tab=state.session?'workout':'home';render();toast('Дані перевірено й відновлено');}catch(error){showError(new Error(`Не вдалося імпортувати: ${error.message}`));}finally{const input=document.getElementById('backup-file');if(input)input.value='';}}
+async function importBackup(file){if(!file)return;try{if(file.size>30*1024*1024)throw new Error('Файл більший за 30 МБ');const incoming=normalize(JSON.parse(await file.text()));await queue;if(!await requestConfirmation({message:`Відновити ${incoming.templates.length} планів і ${incoming.history.length} тренувань? Поточні дані будуть замінені. Спочатку завантажиться їхня резервна копія.`,accept:'Підтвердити',decline:'Залишити'}))return;backup(state,'set-before-import');await commit(s=>{Object.keys(s).forEach(key=>delete s[key]);Object.assign(s,incoming);});ui.tab=state.session?'workout':'home';render();toast('Дані перевірено й відновлено');}catch(error){showError(new Error(`Не вдалося імпортувати: ${error.message}`));}finally{const input=document.getElementById('backup-file');if(input)input.value='';}}
 function sessionExercise(s,id){const found=s.session?.exercises.find(e=>e.id===id);if(!found)throw new Error('Вправу не знайдено');return found;}
 function sessionSet(s,ex,id){const found=sessionExercise(s,ex).sets.find(x=>x.id===id);if(!found)throw new Error('Підхід не знайдено');return found;}
 function displayDraft(){openModal(templateForm(draft,state),'template');}
@@ -316,6 +329,7 @@ async function handleAction(b){
   if(action==='resume'){if(modal.open)closeModal(true);if(window.scrollY)window.scrollTo(0,0);ui.tab='workout';render();return;}
   if(action==='history-mode'){ui.historyMode=b.dataset.mode;ui.historyDate=null;ui.historyLimit=50;render();return;}
   if(action==='history-day'){ui.historyDate=ui.historyDate===b.dataset.date?null:b.dataset.date;render();return;}
+  if(action==='calendar-week'){const base=ui.historyWeek?new Date(ui.historyWeek+'T12:00:00'):new Date();base.setDate(base.getDate()+Number(b.dataset.direction)*7);ui.historyWeek=localDay(base);ui.historyDate=null;render();return;}
   if(action==='calendar-month'){ui.historyMode='calendar';ui.historyDate=null;const base=ui.calendarMonth?new Date(ui.calendarMonth+'-01T12:00:00'):new Date();const month=new Date(base.getFullYear(),base.getMonth()+Number(b.dataset.direction),1);ui.calendarMonth=month.getFullYear()+'-'+String(month.getMonth()+1).padStart(2,'0');render();return;}
   if(action==='export-csv'){await queue;download(historyCSV(state.history),'set-history-'+new Date().toISOString().slice(0,10)+'.csv','text/csv;charset=utf-8');return;}
   if(action==='result-card')return showResultCard(id);
@@ -352,10 +366,10 @@ async function handleAction(b){
   if(action==='set-options'){await queue;openModal(setOptionsForm(sessionExercise(state,id)),'set-options');return;}
   if(action==='easy-day'){await commit(s=>{s.session.easy=!s.session.easy;for(const e of s.session.exercises)delete e.goal;},{sessionOnly:true});return;}
   if(action==='add-warmup'){await commit(s=>{const e=sessionExercise(s,id);if(e.sets.length>=200)throw new Error('Максимум 200 підходів');const index=e.sets.findIndex(isWorking);e.sets.splice(index<0?e.sets.length:index,0,{id:uid(),type:'warmup',weight:'',reps:'',done:false});},{cardOnly:true,sessionOnly:true});return;}
-  if(action==='remove-warmup'){await queue;const e=sessionExercise(state,b.dataset.ex),set=e.sets.find(s=>s.id===b.dataset.set);if(!set||set.type!=='warmup')return;if(e.sets.length===1)return toast('Залиш хоча б один підхід');if(set.done&&!confirm('Прибрати виконану розминку?'))return;await commit(s=>{const e=sessionExercise(s,b.dataset.ex);e.sets=e.sets.filter(x=>x.id!==b.dataset.set);},{cardOnly:true,sessionOnly:true,undoLabel:"Розминку прибрано"});return;}
+  if(action==='remove-warmup'){await queue;const e=sessionExercise(state,b.dataset.ex),set=e.sets.find(s=>s.id===b.dataset.set);if(!set||set.type!=='warmup')return;if(e.sets.length===1)return toast('Залиш хоча б один підхід');if(set.done&&!await requestConfirmation({message:'Прибрати виконану розминку?',accept:'Підтвердити',decline:'Залишити'}))return;await commit(s=>{const e=sessionExercise(s,b.dataset.ex);e.sets=e.sets.filter(x=>x.id!==b.dataset.set);},{cardOnly:true,sessionOnly:true,undoLabel:"Розминку прибрано"});return;}
   if(action==='set-type'){await commit(s=>{const e=sessionExercise(s,b.dataset.ex),set=sessionSet(s,b.dataset.ex,b.dataset.set);set.type=set.type==='warmup'?'working':'warmup';e.sets=[...e.sets.filter(x=>!isWorking(x)),...e.sets.filter(isWorking)];delete e.goal;},{cardOnly:true,sessionOnly:true,undoLabel:"Тип підходу змінено"});return;}
   if(action==='history-type'){syncHistoryDraft();const e=historyDraft.exercises.find(e=>e.id===b.dataset.ex),set=e.sets.find(s=>s.id===b.dataset.set);set.type=set.type==='warmup'?'working':'warmup';e.sets=[...e.sets.filter(x=>!isWorking(x)),...e.sets.filter(isWorking)];delete e.goal;openModal(historyEditor(historyDraft),'history-edit');return;}
-  if(action==='extra-set'){await queue;if(!canOfferExtra(state,sessionExercise(state,id)))return toast('Залишаємо поточний обсяг з урахуванням часу та складності.');if(!confirm('Додати один робочий підхід лише сьогодні? План не зміниться. Залиш орієнтовно 5 хвилин.'))return;await commit(s=>{const e=sessionExercise(s,id),p=workingSets(e).at(-1);e.sets.push({id:uid(),weight:p.weight,reps:p.reps,type:'working',done:false});if(e.goal)e.goal.sets.push({weight:Number(p.weight),reps:Number(p.reps)});},{cardOnly:true,sessionOnly:true,undoLabel:"Підхід додано"});return;}
+  if(action==='extra-set'){await queue;if(!canOfferExtra(state,sessionExercise(state,id)))return toast('Залишаємо поточний обсяг з урахуванням часу та складності.');if(!await requestConfirmation({message:'Додати один робочий підхід лише сьогодні? План не зміниться. Залиш орієнтовно 5 хвилин.',accept:'Підтвердити',decline:'Залишити'}))return;await commit(s=>{const e=sessionExercise(s,id),p=workingSets(e).at(-1);e.sets.push({id:uid(),weight:p.weight,reps:p.reps,type:'working',done:false});if(e.goal)e.goal.sets.push({weight:Number(p.weight),reps:Number(p.reps)});},{cardOnly:true,sessionOnly:true,undoLabel:"Підхід додано"});return;}
   if(action==='exercise-config'){await queue;const e=sessionExercise(state,id);openExerciseConfig(e.exerciseId);return;}
   if(action==='copy-set'){await commit(s=>{const e=sessionExercise(s,b.dataset.ex),i=e.sets.findIndex(x=>x.id===b.dataset.set);if(i<1)return;const previous=e.sets.slice(0,i).filter(s=>(s.type==='warmup')===(e.sets[i].type==='warmup')).at(-1);if(!previous)return;delete e.sets[i].rir;Object.assign(e.sets[i],{weight:previous.weight,reps:previous.reps,done:false});},{cardOnly:true,sessionOnly:true,undoLabel:"Значення скопійовано"});return;}
   if(action==='dismiss-summary'){delete ui.finishedId;render();window.scrollTo(0,0);return;}
@@ -368,27 +382,28 @@ async function handleAction(b){
   if(action==='edit-template')return editTemplate(id);
   if(action==='start'){await commit(s=>startSession(s,id),{redraw:false,sessionOnly:false});if(window.scrollY)window.scrollTo(0,0);ui.tab='workout';render();return;}
   if(action==='add-set')return commit(s=>{const e=sessionExercise(s,id);if(e.sets.length>=200)throw new Error('Максимум 200 підходів');const p=workingSets(e).at(-1);if(e.goal&&p&&validSet({...p,done:true},true))e.goal.sets.push({weight:Number(p.weight),reps:Number(p.reps)});else delete e.goal;e.sets.push({id:uid(),weight:p?.weight??'',reps:p?.reps??'',done:false});},{cardOnly:true,sessionOnly:true,undoLabel:"Підхід додано"});
-  if(action==='remove-set'){await queue;const e=state.session?.exercises.find(e=>e.id===id);if(!e||e.sets.length<=1)return toast('Залиш хоча б один підхід');if(e.sets.at(-1).done&&!confirm('Видалити виконаний підхід?'))return;return commit(s=>{const e=sessionExercise(s,id);e.sets.pop();if(e.goal)e.goal.sets=e.goal.sets.slice(0,workingSets(e).length);},{cardOnly:true,sessionOnly:true,undoLabel:"Підхід видалено"});}
+  if(action==='remove-set'){await queue;const e=state.session?.exercises.find(e=>e.id===id);if(!e||e.sets.length<=1)return toast('Залиш хоча б один підхід');if(e.sets.at(-1).done&&!await requestConfirmation({message:'Видалити виконаний підхід?',accept:'Підтвердити',decline:'Залишити'}))return;return commit(s=>{const e=sessionExercise(s,id);e.sets.pop();if(e.goal)e.goal.sets=e.goal.sets.slice(0,workingSets(e).length);},{cardOnly:true,sessionOnly:true,undoLabel:"Підхід видалено"});}
+  if(action==='skip-set'){await commit(s=>{const set=sessionSet(s,b.dataset.ex,b.dataset.set);if(set.done)return;set.skipped=!set.skipped;if(s.restSetId===set.id){s.restEndsAt=null;s.restSetId=null;}},{cardOnly:true,sessionOnly:true,undoLabel:'Позначку пропуску змінено'});return;}
   if(action==='toggle-set'){
     await queue;
     const currentSet=sessionSet(state,b.dataset.ex,b.dataset.set);
-    if(!currentSet.done&&!validSet({...currentSet,done:true},true)){
+    if(!currentSet.done&&!validSet({...currentSet,done:true,skipped:false},true)){
       showSetFieldError(b.dataset.ex,b.dataset.set,currentSet);
       return;
     }
-    const exercise=sessionExercise(state,b.dataset.ex),finishesExercise=isWorking(currentSet)&&!currentSet.done&&workingSets(exercise).every(s=>s.id===currentSet.id||s.done);
+    const exercise=sessionExercise(state,b.dataset.ex),finishesExercise=isWorking(currentSet)&&!currentSet.done&&workingSets(exercise).every(s=>s.id===currentSet.id||s.done||s.skipped);
     await commit(s=>{
       const set=sessionSet(s,b.dataset.ex,b.dataset.set);
-      if(!set.done&&!validSet({...set,done:true},true))throw new Error('Вкажи вагу 0–10000 кг і цілу кількість повторень 1–1000');
-      set.done=!set.done;
+      if(!set.done&&!validSet({...set,done:true,skipped:false},true))throw new Error('Вкажи вагу 0–10000 кг і цілу кількість повторень 1–1000');
+      set.done=!set.done;delete set.skipped;
       if(set.done){
         const rest=restAfterSet(s,sessionExercise(s,b.dataset.ex),set);
         s.restDuration=rest.seconds||s.restSeconds;s.restKind=rest.kind;
         s.restEndsAt=rest.seconds?Date.now()+rest.seconds*1000:null;
         s.restSetId=rest.seconds?set.id:null;timerNotified=null;
       }else if(s.restSetId===set.id){s.restEndsAt=null;s.restSetId=null;timerNotified=null;}
-    },{cardOnly:true,sessionOnly:true,undoLabel:finishesExercise?'Підхід '+setLabel(exercise,exercise.sets.indexOf(currentSet))+' збережено':null});
-    if(finishesExercise)requestAnimationFrame(()=>requestAnimationFrame(()=>revealCompletedExercise(false)));
+    },{cardOnly:true,sessionOnly:true,undoLabel:currentSet.done?'Позначку підходу знято':'Підхід '+setLabel(exercise,exercise.sets.indexOf(currentSet))+' збережено'});
+    requestAnimationFrame(()=>requestAnimationFrame(()=>revealCompletedExercise(false)));
     return;
   }
   if(action==='set-effort'){await commit(s=>{const set=sessionSet(s,b.dataset.ex,b.dataset.set),value=Number(b.dataset.rirValue);if(!set.done)return;if(set.rir===value)delete set.rir;else set.rir=value;},{cardOnly:true,sessionOnly:true});return;}
@@ -406,18 +421,22 @@ async function handleAction(b){
     return;
   }
   if(action==='select-exercise'){await queue;if(!state.session?.exercises.some(e=>e.id===id))return;ui.focusId=id;closeModal(true);render();window.scrollTo(0,0);return;}
-  if(action==='remove-session-ex'){if(confirm('Прибрати вправу та її підходи з поточного тренування?'))return commit(s=>{s.session.exercises=s.session.exercises.filter(e=>e.id!==id);},{sessionOnly:true,undoLabel:"Вправу прибрано"});return;}
+  if(action==='remove-session-ex'){if(await requestConfirmation({message:'Прибрати вправу та її підходи з поточного тренування?',accept:'Підтвердити',decline:'Залишити'}))return commit(s=>{s.session.exercises=s.session.exercises.filter(e=>e.id!==id);},{sessionOnly:true,undoLabel:"Вправу прибрано"});return;}
   if(action==='session-add-ex'){openModal(`${button('close-modal','×','aria-label="Закрити"','modal-close')}<h2>Додати вправу</h2><p class="scope-badge">Лише для сьогоднішнього заняття</p><form id="session-ex-form"><div class="labels"><label for="session-ex-name">Назва вправи</label><input id="session-ex-name" class="field" maxlength="90" required list="exercise-names" autofocus></div>${catalogList(state)}<button class="btn block" type="submit">Додати до тренування</button></form>`,'session-ex');return;}
   if(action==='finish-workout'){
-    await queue;
-    const unmarked=state.session.exercises.reduce((n,e)=>n+e.sets.filter(s=>!s.done).length,0);
-    if(unmarked&&!confirm(`Не позначено ${unmarked} підходів. Зберегти лише виконані й завершити тренування достроково?`))return;
-    const completedId=state.session.id;
-    await commit(finishSession,{redraw:false});
-    ui.finishedId=completedId;if(window.scrollY)window.scrollTo(0,0);ui.tab='history';render();
-    return;
+    await queue;if(!state.session)return;if(modal.open)closeModal(true);
+    const sessionId=state.session.id,summary=sessionSummary(state.session);
+    if(!summary.done){const leave=await requestConfirmation({...finishPrompt(state.session),accept:'Скасувати заняття',danger:true});if(leave)return handleAction({dataset:{action:'cancel-workout'}});return;}
+    if(summary.done<summary.total&&!await requestConfirmation(finishPrompt(state.session)))return;
+    await queue;if(state.session?.id!==sessionId)return;
+    await commit(finishSession,{redraw:false});ui.finishedId=sessionId;ui.tab='history';render();window.scrollTo(0,0);return;
   }
-  if(action==='cancel-workout'){if(confirm('Скасувати поточне тренування та видалити введені результати?')){await commit(s=>{s.session=null;s.restEndsAt=null;},{redraw:false,sessionOnly:true,undoLabel:'Тренування скасовано'});if(window.scrollY)window.scrollTo(0,0);ui.tab='home';render();}return;}
+  if(action==='cancel-workout'){
+    await queue;if(!state.session)return;if(modal.open)closeModal(true);const sessionId=state.session.id;
+    if(!await requestConfirmation({title:'Скасувати це заняття?',message:'Поточні результати не потраплять в історію. Збережені тренування та основна програма залишаться. Після скасування буде доступна дія «Скасувати дію».',accept:'Так, скасувати заняття',decline:'Продовжити тренування',danger:true}))return;
+    await queue;if(state.session?.id!==sessionId)return;
+    await commit(s=>{s.session=null;s.restEndsAt=null;s.restSetId=null;},{redraw:false,sessionOnly:true,undoLabel:'Заняття скасовано'});ui.tab='home';render();window.scrollTo(0,0);return;
+  }
   if(action==='rest-start'||action==='rest-adjust')return commit(s=>{if(!s.session)return;s.restEndsAt=action==='rest-adjust'?Math.max(Date.now(),s.restEndsAt||Date.now())+30000:Date.now()+s.restSeconds*1000;s.restDuration=Math.min(86400,Math.max(action==='rest-start'?s.restSeconds:(s.restDuration||s.restSeconds),Math.ceil((s.restEndsAt-Date.now())/1000)));timerNotified=null;},{redraw:false,sessionOnly:true}).then(updateTimer);
   if(action==='rest-stop')return commit(s=>{s.restEndsAt=null;timerNotified=null;},{redraw:false,sessionOnly:true}).then(()=>{if(modalMode==='rest-focus')closeModal(true);updateTimer();});
   if(action==='export')return exportBackup();
@@ -426,16 +445,16 @@ async function handleAction(b){
   if(action==='copy-share-text')return copyProgramText();
   if(action==='export-legacy'){const text=await repo.recoveryText();if(!text)return toast('Даних попередньої версії немає');download(text,'set-before-v2.json');return;}
   if(action==='import')return document.getElementById('backup-file').click();
-  if(action==='reset'){if(confirm('Очистити всі поточні плани та історію? Перед очищенням завантажиться резервна копія.')){await queue;backup(state,'set-before-reset');await commit(s=>{Object.assign(s,fresh());},{redraw:false});ui.tab='home';render();}return;}
+  if(action==='reset'){if(await requestConfirmation({message:'Очистити всі поточні плани та історію? Перед очищенням завантажиться резервна копія.',accept:'Підтвердити',decline:'Залишити'})){await queue;backup(state,'set-before-reset');await commit(s=>{Object.assign(s,fresh());},{redraw:false});ui.tab='home';render();}return;}
   if(action==='close-modal')return closeModal();
   if(action==='draft-add'){syncDraft();const name=draft.addName.trim();if(!name)return toast('Введи назву вправи');if(draft.exercises.length>=200)return toast('Максимум 200 вправ');draft.exercises.push({id:uid(),exerciseId:null,name,targetSets:4,targetReps:8});draft.addName='';displayDraft();return;}
   if(action==='draft-remove'){syncDraft();draft.exercises=draft.exercises.filter(e=>e.id!==id);displayDraft();return;}
   if(action==='draft-move'){syncDraft();moveItem(draft.exercises,id,Number(b.dataset.direction));displayDraft();return;}
-  if(action==='delete-template'){if(confirm('Видалити план? Історія тренувань залишиться.')){await commit(s=>{s.templates=s.templates.filter(t=>t.id!==draft.id);},{undoLabel:"План видалено"});closeModal(true);}return;}
+  if(action==='delete-template'){if(await requestConfirmation({message:'Видалити план? Історія тренувань залишиться.',accept:'Підтвердити',decline:'Залишити'})){await commit(s=>{s.templates=s.templates.filter(t=>t.id!==draft.id);},{undoLabel:"План видалено"});closeModal(true);}return;}
   if(action==='history-detail'){const w=state.history.find(w=>w.id===id);if(w)openModal(historyDetail(w),'history-detail');return;}
-  if(action==='delete-history'){if(confirm('Видалити цей запис історії?')){await commit(s=>{s.history=s.history.filter(w=>w.id!==id);},{undoLabel:"Запис видалено"});closeModal(true);}return;}
+  if(action==='delete-history'){if(await requestConfirmation({message:'Видалити цей запис історії?',accept:'Підтвердити',decline:'Залишити'})){await commit(s=>{s.history=s.history.filter(w=>w.id!==id);},{undoLabel:"Запис видалено"});closeModal(true);}return;}
   if(action==='edit-history'){historyDraft=clone(state.history.find(w=>w.id===id));openModal(historyEditor(historyDraft),'history-edit');syncHistoryDraft();historyBaseline=JSON.stringify(historyDraft);return;}
-  if(action==='history-remove-set'){syncHistoryDraft();const e=historyDraft.exercises.find(e=>e.id===b.dataset.ex);if(e.sets.length===1){if(!confirm('Прибрати вправу з цього запису?'))return;historyDraft.exercises=historyDraft.exercises.filter(x=>x.id!==e.id);}else e.sets=e.sets.filter(s=>s.id!==b.dataset.set);openModal(historyEditor(historyDraft),'history-edit');return;}
+  if(action==='history-remove-set'){syncHistoryDraft();const e=historyDraft.exercises.find(e=>e.id===b.dataset.ex);if(e.sets.length===1){if(!await requestConfirmation({message:'Прибрати вправу з цього запису?',accept:'Підтвердити',decline:'Залишити'}))return;historyDraft.exercises=historyDraft.exercises.filter(x=>x.id!==e.id);}else e.sets=e.sets.filter(s=>s.id!==b.dataset.set);openModal(historyEditor(historyDraft),'history-edit');return;}
   if(action==='history-add-set'){syncHistoryDraft();const e=historyDraft.exercises.find(e=>e.id===id);if(e.sets.length>=200)return toast('Максимум 200 підходів');e.sets.push({id:uid(),weight:e.sets.at(-1)?.weight??0,reps:e.sets.at(-1)?.reps??8,done:true});openModal(historyEditor(historyDraft),'history-edit');return;}
   if(action==='muscle-select'){ui.muscleGroup=b.dataset.group;ui.progressDetailsOpen=true;ui.muscleDetailsOpen=true;const y=window.scrollY;render();window.scrollTo(0,y);return;}
   if(action==='chart-metric'){ui.metric=b.dataset.metric;const y=window.scrollY;render();window.scrollTo(0,y);return;}
@@ -444,7 +463,12 @@ async function handleAction(b){
   if(action==='persist-storage'){ui.storageStatus=await requestPersistence();render();return;}
 }
 
-document.addEventListener('click',event=>{const b=event.target.closest('[data-action]');if(b&&!b.disabled)handleAction(b).catch(showError);});
+const runningActions=new Set();
+document.addEventListener('click',event=>{const b=event.target.closest('[data-action]');if(!b||b.disabled)return;
+ const a=b.dataset.action;if(a==='toggle-set'&&event.detail>1)return;
+ const key=a+':'+(b.dataset.ex||'')+':'+(b.dataset.set||b.dataset.id||'');if(runningActions.has(key))return;
+ runningActions.add(key);handleAction(b).catch(showError).finally(()=>runningActions.delete(key));
+});
 document.addEventListener('keydown',event=>{
  const tab=event.target.closest('.action-tabs [role="tab"],.progress-tabs [role="tab"]');
  if(!tab||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
@@ -473,7 +497,7 @@ app.addEventListener('input',event=>{
   btn?.classList.remove('yes');
   btn?.setAttribute('aria-pressed','false');
   btn?.setAttribute('aria-label',btn.getAttribute('aria-label')?.replace(': виконано',': позначити виконаним')||'Позначити виконаним');
-  commit(s=>{const target=sessionSet(s,ex,set);target[field]=value;target.done=false;delete target.rir;},{redraw:false,preserve:true,sessionOnly:true}).then(()=>{
+  commit(s=>{const target=sessionSet(s,ex,set);target[field]=value;target.done=false;delete target.skipped;delete target.rir;},{redraw:false,preserve:true,sessionOnly:true}).then(()=>{
     if(pendingEdits.get(key)===edit)pendingEdits.delete(key);
     if(ui.tab==='workout')updateExerciseCardDOM();
   }).catch(()=>{});
@@ -555,18 +579,17 @@ function storageChanged(){clearUndo();stale=true;showError(new Error('СЕТ о�
 channel?.addEventListener('message',event=>{if(event.data.revision>repo.revision)storageChanged();});
 window.addEventListener('set-storage-changed',storageChanged);
 document.getElementById('noticeExport').addEventListener('click',()=>{if(state)exportBackup().catch(showError);else repo.recoveryText().then(text=>{if(text)download(text,'set-recovery.json');else toast('Попередніх локальних даних немає');});});
-document.getElementById('noticeReload').addEventListener('click',()=>{if((pending||failed)&&!confirm('Є незбережені зміни. Спочатку збережи копію. Перезавантажити?'))return;location.reload();});
+document.getElementById('noticeReload').addEventListener('click',async()=>{if((pending||failed)&&!await requestConfirmation({message:'Є незбережені зміни. Спочатку збережи копію. Перезавантажити?',accept:'Підтвердити',decline:'Залишити'}))return;location.reload();});
 
 // A fixed dock is used when there is enough room for the exercise. Large text,
 // a small viewport or the software keyboard puts dock + undo in document flow.
 function revealCompletedExercise(retry=false){
  if(ui.tab!=='workout'||document.body.classList.contains('dock-in-flow')||document.body.classList.contains('keyboard-open'))return;
- const effort=app.querySelector('.quiet-effort'),head=app.querySelector('.simple-workout-head'),title=app.querySelector('.exercise-name'),dock=document.getElementById('restSlot');
+ const effort=app.querySelector('.set-block.is-current')||app.querySelector('.quiet-effort'),head=app.querySelector('.simple-workout-head'),title=app.querySelector('.exercise-name'),dock=document.getElementById('restSlot');
  if(!effort||!head||!title||!dock)return;
  const limit=(!undoBar.hidden?undoBar:dock).getBoundingClientRect().top-8,needed=effort.getBoundingClientRect().bottom-limit;
- const maximum=Math.max(0,title.getBoundingClientRect().top-head.getBoundingClientRect().bottom);
- if(needed>0&&maximum>0){
-  window.scrollBy({top:Math.min(needed,maximum),behavior:'instant'});
+ if(needed>0){
+  window.scrollBy({top:needed,behavior:'instant'});
   // Sticking can change the header height; use the settled geometry once more.
   if(!retry)requestAnimationFrame(()=>revealCompletedExercise(true));
  }
@@ -632,7 +655,7 @@ async function boot(){
         if(file.size>30*1024*1024)throw new Error('Файл завеликий');
         const incoming=normalize(JSON.parse(await file.text()));
         if(!repo.db)throw new Error('Сховище недоступне. Відкрий СЕТ у звичайному режимі Safari.');
-        if(!confirm('Відновити застосунок із перевіреної копії?'))return;
+        if(!await requestConfirmation({message:'Відновити застосунок із перевіреної копії?',accept:'Підтвердити',decline:'Залишити'}))return;
         await repo.write(incoming);location.reload();
       }catch(e){showError(e);}
     };
