@@ -377,7 +377,7 @@ async function handleAction(b){
       return;
     }
     const exercise=sessionExercise(state,b.dataset.ex),finishesExercise=isWorking(currentSet)&&!currentSet.done&&workingSets(exercise).every(s=>s.id===currentSet.id||s.done);
-    return commit(s=>{
+    await commit(s=>{
       const set=sessionSet(s,b.dataset.ex,b.dataset.set);
       if(!set.done&&!validSet({...set,done:true},true))throw new Error('Вкажи вагу 0–10000 кг і цілу кількість повторень 1–1000');
       set.done=!set.done;
@@ -388,6 +388,8 @@ async function handleAction(b){
         s.restSetId=rest.seconds?set.id:null;timerNotified=null;
       }else if(s.restSetId===set.id){s.restEndsAt=null;s.restSetId=null;timerNotified=null;}
     },{cardOnly:true,sessionOnly:true,undoLabel:finishesExercise?'Підхід '+setLabel(exercise,exercise.sets.indexOf(currentSet))+' збережено':null});
+    if(finishesExercise)requestAnimationFrame(()=>requestAnimationFrame(()=>revealCompletedExercise(false)));
+    return;
   }
   if(action==='set-effort'){await commit(s=>{const set=sessionSet(s,b.dataset.ex,b.dataset.set),value=Number(b.dataset.rirValue);if(!set.done)return;if(set.rir===value)delete set.rir;else set.rir=value;},{cardOnly:true,sessionOnly:true});return;}
   if(action==='exercise-order'){
@@ -557,6 +559,18 @@ document.getElementById('noticeReload').addEventListener('click',()=>{if((pendin
 
 // A fixed dock is used when there is enough room for the exercise. Large text,
 // a small viewport or the software keyboard puts dock + undo in document flow.
+function revealCompletedExercise(retry=false){
+ if(ui.tab!=='workout'||document.body.classList.contains('dock-in-flow')||document.body.classList.contains('keyboard-open'))return;
+ const effort=app.querySelector('.quiet-effort'),head=app.querySelector('.simple-workout-head'),title=app.querySelector('.exercise-name'),dock=document.getElementById('restSlot');
+ if(!effort||!head||!title||!dock)return;
+ const limit=(!undoBar.hidden?undoBar:dock).getBoundingClientRect().top-8,needed=effort.getBoundingClientRect().bottom-limit;
+ const maximum=Math.max(0,title.getBoundingClientRect().top-head.getBoundingClientRect().bottom);
+ if(needed>0&&maximum>0){
+  window.scrollBy({top:Math.min(needed,maximum),behavior:'instant'});
+  // Sticking can change the header height; use the settled geometry once more.
+  if(!retry)requestAnimationFrame(()=>revealCompletedExercise(true));
+ }
+}
 function layoutWorkoutDock(){
  const dock=document.getElementById('restSlot'),head=app.querySelector('.simple-workout-head');
  if(!dock){document.body.classList.remove('dock-in-flow');return;}
