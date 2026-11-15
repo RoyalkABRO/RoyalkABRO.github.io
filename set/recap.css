@@ -40,31 +40,6 @@ dialog.recap-dialog{
 .recap-slide h2{font-size:clamp(1.75rem,8vw,3.6rem);letter-spacing:-.045em;line-height:1.06;margin:.3rem 0 1rem;color:inherit}
 .recap-slide h2:focus,.recap-slide:focus{outline:none}
 .recap-hero{text-align:center;align-content:center}
-.recap-stage{position:relative;isolation:isolate;width:min(260px,65vw,34dvh);aspect-ratio:1;margin:12px auto 26px;--paint:#c8f542;--edge:#6c8b22}
-.recap-stage[data-motion=stable]{--paint:#ffd17e;--edge:#9f652a}
-.recap-stage[data-motion=down]{--paint:#ff9e91;--edge:#ac4749}
-.recap-stage[data-motion=insufficient]{--paint:#d0befa;--edge:#7767a2}
-.recap-radar{position:absolute;inset:-12%;border-radius:50%;background:repeating-radial-gradient(circle,transparent 0 19%,color-mix(in srgb,var(--paint) 19%,transparent) 19.5% 20%,transparent 20.5% 24%);mask-image:radial-gradient(#000 24%,transparent 69%)}
-.recap-arrow{position:absolute;inset:0;width:100%;height:100%;overflow:visible;transform-origin:50% 78%;filter:drop-shadow(0 8px 8px #13170e30)}
-.recap-arrow-body{fill:var(--paint);stroke:var(--edge);stroke-width:2;stroke-linejoin:round}
-.recap-arrow-depth{fill:var(--edge);stroke:var(--edge);stroke-width:3;stroke-linejoin:round}
-.recap-face{fill:#263019;stroke:#263019;stroke-linecap:round}
-.recap-arm{fill:none;stroke:var(--edge);stroke-width:5;stroke-linecap:round;transform-origin:50% 56%}
-.recap-shadow{position:absolute;inset:auto 26% 10% 26%;height:7%;border-radius:50%;background:#21251a55;filter:blur(4px)}
-.recap-trail{position:absolute;top:28%;bottom:17%;left:43%;width:14%;background:linear-gradient(var(--paint),transparent);border-radius:90%;opacity:0;filter:blur(7px)}
-.recap-spark{position:absolute;top:50%;left:50%;width:8px;height:14px;border-radius:3px;opacity:0;background:var(--paint)}
-.recap-spark:nth-child(3n){background:#ffcf76}
-.recap-spark:nth-child(3n + 1){background:#f8f4da;border-radius:50%;width:6px;height:6px}
-[data-motion=intro] .recap-arrow{animation:recap-ready 1.8s ease-in-out 2}
-[data-motion=up] .recap-arrow{animation:recap-up 1.42s both}
-[data-motion=up] .recap-trail{animation:recap-trail 1.42s both}
-[data-motion=up] .recap-spark{animation:recap-confetti .8s calc(.43s + var(--spark)*45ms) both}
-[data-motion=stable] .recap-arrow{animation:recap-steady 1.24s both}
-[data-motion=stable] .recap-arm{animation:recap-shrug 1.24s both}
-[data-motion=down] .recap-arrow{animation:recap-down 1.66s both}
-[data-motion=down] .recap-arrow-body{animation:recap-blush 1.66s both}
-[data-motion=insufficient] .recap-arrow{animation:recap-scan 1.3s both}
-[data-motion=insufficient] .recap-radar{animation:recap-sweep 1.3s both}
 .recap-reveal-number,.recap-best{font-weight:850;font-size:clamp(1.25rem,6vw,2.8rem);line-height:1.12;margin:12px 0}
 .recap-reveal-number small{display:block;margin-top:5px;font-size:.8rem;font-weight:550}
 .recap-note,.recap-list small,.recap-records small,.recap-awards small{display:block;color:var(--recap-muted,var(--muted));font-size:.9rem;margin:6px 0 10px}
@@ -100,25 +75,187 @@ dialog.recap-dialog{
 .recap-dialog [hidden]{display:none!important}
 .recap-settings{margin-block:12px}
 @keyframes recap-enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-@keyframes recap-ready{0%,100%{transform:none}50%{transform:translateY(-6%) scaleY(1.03)}}
-@keyframes recap-up{
- 0%{transform:none}15%{transform:translate(-2%,5%) rotate(-4deg) scale(1.12,.82)}
- 23%{transform:translate(2%,6%) rotate(4deg) scale(1.21,.75)}
- 32%{transform:translateY(-20%) scale(.83,1.23)}
- 47%{transform:translateY(-29%) rotate(-7deg) scale(1.03,.97)}
- 60%{transform:translateY(-11%) rotate(3deg)}
- 74%{transform:translateY(3%) scale(1.16,.84)}
- 87%{transform:translateY(-7%) scale(.96,1.06)}100%{transform:none}
-}
-@keyframes recap-trail{0%,25%,100%{opacity:0;transform:scaleY(.3)}42%{opacity:.7;transform:translateY(-24%) scaleY(1.4)}}
-@keyframes recap-confetti{12%{opacity:1}70%{opacity:1}100%{transform:rotate(var(--angle)) translateY(-95px) rotate(120deg);opacity:0}}
-@keyframes recap-steady{0%,100%{transform:none}21%{transform:scale(1.13,.86)}44%{transform:translateY(-13%) scale(.94,1.08)}65%{transform:translateY(-8%) rotate(-6deg)}82%{transform:translateY(1%) scale(1.07,.93)}}
-@keyframes recap-shrug{0%,60%,100%{transform:none}72%{transform:translateY(-8px)}}
-@keyframes recap-down{0%,100%{transform:none}17%{transform:scale(1.21,.75)}33%{transform:translateY(-19%) scale(.85,1.19) rotate(-10deg)}47%{transform:translate(9%,-10%) rotate(40deg)}64%{transform:translate(9%,10%) rotate(77deg) scale(1.13,.74)}77%{transform:translate(5%,2%) rotate(40deg)}91%{transform:rotate(-9deg) scale(.97,1.04)}}
-@keyframes recap-blush{0%,34%{fill:#c8f542}62%,100%{fill:var(--paint)}}
-@keyframes recap-scan{0%,100%{transform:none}26%{transform:rotate(-12deg) scale(.97,1.04)}58%{transform:rotate(12deg) translateY(-3%)}}
-@keyframes recap-sweep{0%{opacity:.12;transform:scale(.55)}65%{opacity:1}100%{transform:scale(1.13)}}
 @keyframes recap-badge{0%{opacity:0;transform:scale(.88) translateY(5px)}67%{opacity:1;transform:scale(1.025)}100%{transform:none}}
 @media(prefers-reduced-motion:reduce){.recap-dialog *,.recap-dialog *::before,.recap-dialog *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 .recap-week-values span{display:grid;grid-template-rows:56px auto auto;justify-items:center;align-items:end}
 .recap-week-values i{display:block;width:min(64%,24px);height:var(--height);background:var(--recap-good);border-radius:5px 5px 1px 1px}
+/* Stage and score use the same phase clock. SVG joints are layered over the floor shadow. */
+.mascot-scene{
+ position:relative;isolation:isolate;container-type:inline-size;
+ width:min(100%,340px,calc(49dvh + 86px));aspect-ratio:320/256;
+ margin:auto;--ground:#a5d548;--spark:#d7ff5e;--prop-bg:#263122;--prop-ink:#f6ffcf;
+}
+@media(prefers-color-scheme:light){.mascot-scene{--prop-bg:#e3efc6;--prop-ink:#29371d}}
+.mascot-motion-art,.mascot-rings,.mascot-svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.mascot-rings{
+ inset:0 12%;width:auto;border-radius:50%;opacity:.5;
+ background:repeating-radial-gradient(circle,transparent 0 21%,color-mix(in srgb,var(--ground) 26%,transparent) 21.5% 22%,transparent 22.5% 26%);
+ mask-image:radial-gradient(ellipse,#000 23%,transparent 72%);
+}
+.mascot-svg{z-index:1}
+.mascot-actor,.mascot-shadow{transform-origin:50% 87%}
+.mascot-arm-right{transform-origin:58% 53%}
+.mascot-arm-left{transform-origin:42% 53%}
+.mascot-step-left{transform-origin:45% 69%}
+.mascot-step-right{transform-origin:55% 69%}
+.mascot-eye-open{transform-origin:50% 43%}
+.mascot-strain,.mascot-trail,.mascot-paper,.mascot-dust{opacity:0}
+.mascot-clock{position:absolute;bottom:0;width:1px;height:1px;pointer-events:none;opacity:0}
+.mascot-clock::before{content:none}
+.mascot-scene:is([data-phase=anticipation],[data-phase=up],[data-phase=down],[data-phase=stable],[data-phase=record],[data-phase=celebration]) .mascot-clock{animation:mascot-beat var(--beat) linear both}
+.mascot-scene[data-paused=true] *{animation-play-state:paused!important}
+.mascot-prop{
+ position:absolute;z-index:2;display:grid;gap:2px;justify-items:center;max-width:95%;
+ border:1px solid color-mix(in srgb,var(--ground) 50%,transparent);
+ border-radius:14px;padding:6px 10px;background:var(--prop-bg);color:var(--prop-ink);
+ box-shadow:0 3px 18px #101f1726;line-height:1.12;overflow-wrap:anywhere;
+}
+.mascot-prop strong{font-size:clamp(.9rem,4vw,1.8rem);font-variant-numeric:tabular-nums}
+.mascot-prop span{font-size:.73rem}
+.mascot-score{left:50%;top:0;transform:translateX(-50%);white-space:nowrap}
+.mascot-graph{right:1%;top:30%;width:37%;transform-origin:15% 20%;--ground:#ef9e82;--prop-ink:#ffbdab;--prop-bg:#372823}
+.mascot-graph svg{width:100%;height:auto;max-height:40px}
+.mascot-graph strong{font-size:clamp(.66rem,3vw,.9rem);text-align:center}
+.mascot-pr{left:50%;bottom:2%;transform:translateX(-50%);width:max-content}
+.mascot-trail{position:absolute;left:40%;top:49%;width:20%;height:36%;border-radius:90%;background:linear-gradient(#c8f542,transparent);filter:blur(5px)}
+.mascot-paper{position:absolute;left:50%;top:38%;width:6px;height:11px;border-radius:2px;background:var(--spark)}
+.mascot-paper:nth-of-type(3n){background:#ffc36a}
+.mascot-paper:nth-of-type(3n + 1){background:#bfc9ff;border-radius:50%;height:6px}
+.mascot-dust{position:absolute;bottom:9%;left:39%;width:22%;height:9%;border-radius:50%;background:#eaa986;filter:blur(7px)}
+.mascot-barbell{opacity:0}
+.mascot-thumb{opacity:1}
+[data-mascot=stable]:is([data-phase=ready],[data-phase=anticipation]) .mascot-thumb{opacity:0}
+[data-mascot=stable][data-phase=settled] .mascot-fist{opacity:0}
+[data-mascot=stable][data-phase=settled] .mascot-arm-right{transform:rotate(-38deg)}
+[data-mascot=down][data-phase=settled] .mascot-arm-right{transform:rotate(-20deg)}
+[data-mascot=down][data-phase=settled] .mascot-skin{fill:#c3ee55}
+[data-phase=idle] .mascot-actor,[data-phase=insufficient] .mascot-actor{animation:mascot-breathe 3s ease-in-out infinite}
+[data-phase=idle] .mascot-eye-open,[data-phase=insufficient] .mascot-eye-open{animation:mascot-blink 5.4s infinite}
+[data-phase=idle] .mascot-pupils,[data-phase=insufficient] .mascot-pupils{animation:mascot-look 6.8s ease-in-out infinite}
+[data-phase=anticipation]:not([data-mascot=record]) .mascot-actor{animation:mascot-coil var(--beat) both}
+[data-phase=anticipation] .mascot-face{opacity:0}
+[data-phase=anticipation] .mascot-strain{opacity:1}
+[data-phase=anticipation] .mascot-score{opacity:.52;transform:translate(-50%,17%) scale(.91)}
+[data-phase=anticipation] .mascot-graph{transform:rotate(-6deg)}
+[data-phase=anticipation] .mascot-pr{opacity:0}
+[data-phase=up] .mascot-actor{animation:mascot-leap var(--beat) both}
+[data-phase=up] .mascot-score{animation:mascot-score-lift var(--beat) both}
+[data-phase=up] .mascot-trail{animation:mascot-trail var(--beat) both}
+[data-phase=up] .mascot-arm-right,[data-phase=celebration] .mascot-arm-right{animation:mascot-fist-up var(--beat) both}
+[data-phase=up] .mascot-step-left,[data-phase=celebration] .mascot-step-left{animation:mascot-kick var(--beat) both}
+[data-phase=up] .mascot-shadow,[data-phase=stable] .mascot-shadow,[data-phase=celebration] .mascot-shadow{animation:mascot-land-shadow var(--beat) both}
+[data-phase=down] .mascot-actor{animation:mascot-tumble var(--beat) both}
+[data-phase=down] .mascot-graph{animation:mascot-graph-brace var(--beat) both}
+[data-phase=down] .mascot-arm-right{animation:mascot-brace var(--beat) both}
+[data-phase=down] .mascot-dust{animation:mascot-impact var(--beat) both}
+[data-phase=down] .mascot-skin{animation:mascot-blush var(--beat) both}
+[data-phase=stable] .mascot-actor{animation:mascot-hop var(--beat) both}
+[data-phase=stable] .mascot-arm-right{animation:mascot-thumb-up var(--beat) both}
+[data-phase=stable] .mascot-thumb{animation:mascot-show-thumb var(--beat) both}
+[data-phase=stable] .mascot-fist{animation:mascot-hide-fist var(--beat) both}
+[data-mascot=record]:is([data-phase=anticipation],[data-phase=record]) .mascot-barbell{opacity:1}
+[data-mascot=record][data-phase=anticipation] .mascot-actor{animation:mascot-grip var(--beat) both}
+[data-phase=record] .mascot-actor{animation:mascot-lift var(--beat) both}
+[data-phase=record] .mascot-barbell{animation:mascot-bar var(--beat) both}
+[data-mascot=record]:is([data-phase=anticipation],[data-phase=record]) :is(.mascot-arm-left,.mascot-arm-right){opacity:0}
+[data-phase=record] .mascot-pr{animation:mascot-pr-reveal var(--beat) both}
+[data-phase=celebration] .mascot-actor{animation:mascot-party var(--beat) both}
+[data-phase=celebration] .mascot-arm-left{animation:mascot-wave var(--beat) both}
+:is([data-phase=up],[data-phase=celebration]) .mascot-paper{animation:mascot-confetti .69s calc(.23s + var(--delay)) both}
+[data-phase=record] .mascot-paper{animation:mascot-confetti .61s calc(.74s + var(--delay)) both}
+.mascot-recap-slide:not(.recap-hero) .mascot-scene{width:min(100%,245px,calc(36dvh + 50px))}
+.mascot-controls{display:flex;gap:6px 14px;flex-wrap:wrap;justify-content:center;margin:0 0 4px}
+.mascot-controls .text-btn{color:var(--recap-muted);font-size:.78rem}
+.mascot-controls [hidden]{display:none!important}
+@keyframes mascot-beat{from{opacity:0}to{opacity:.01}}
+@keyframes mascot-breathe{0%,100%{transform:none}46%{transform:translateY(-1.25%) scale(.99,1.027)}}
+@keyframes mascot-blink{0%,39%,43%,88%,93%,100%{transform:scaleY(1)}41%,91%{transform:scaleY(.09)}}
+@keyframes mascot-look{0%,100%{transform:none}22%,31%{transform:translateX(3px)}57%,68%{transform:translateX(-3px)}}
+@keyframes mascot-coil{
+ 0%{transform:none}41%{transform:translateY(2%) scale(1.07,.89)}
+ 63%{transform:translate(1%,3%) rotate(2deg) scale(1.1,.83)}
+ 84%{transform:translate(-1%,4%) rotate(-2deg) scale(1.14,.78)}
+ 100%{transform:translateY(3%) scale(1.13,.79)}
+}
+@keyframes mascot-leap{
+ 0%{transform:translateY(3%) scale(1.13,.79)}15%{transform:translateY(-20%) scale(.84,1.18)}
+ 34%{transform:translateY(-28%) rotate(-8deg) scale(1.02,1.05)}55%{transform:translateY(-14%) rotate(5deg)}
+ 73%{transform:translateY(3%) scale(1.15,.85)}87%{transform:translateY(-6%) scale(.97,1.04)}100%{transform:none}
+}
+@keyframes mascot-score-lift{
+ 0%{opacity:.52;transform:translate(-50%,17%) scale(.91)}21%{opacity:.66;transform:translate(-50%,17%) scale(.94)}
+ 33%{opacity:1;transform:translate(-50%,-41%) scale(1.1)}
+ 57%{transform:translate(-50%,5%) scale(.97)}80%{transform:translate(-50%,-4%) scale(1.02)}
+ 100%{transform:translateX(-50%)}
+}
+@keyframes mascot-trail{0%,8%,83%,100%{opacity:0}29%{opacity:.75;transform:translateY(-30%) scaleY(1.2)}}
+@keyframes mascot-kick{0%,70%,100%{transform:none}33%{transform:rotate(22deg) translateY(-6px)}}
+@keyframes mascot-fist-up{0%,100%{transform:none}38%,62%{transform:rotate(-63deg)}}
+@keyframes mascot-land-shadow{0%,100%{transform:none;opacity:.32}36%{transform:scaleX(.54);opacity:.17}72%{transform:scaleX(1.2);opacity:.39}}
+@keyframes mascot-tumble{
+ 0%{transform:translateY(3%) scale(1.13,.79)}17%{transform:translateY(-15%) rotate(-12deg) scale(.92,1.1)}
+ 33%{transform:translate(5%,-13%) rotate(33deg)}53%{transform:translate(-8%,5%) rotate(67deg) scale(1.05,.83)}
+ 69%{transform:translate(-9%,3%) rotate(45deg)}89%{transform:translate(-1%,-3%) rotate(-9deg)}
+ 100%{transform:none}
+}
+@keyframes mascot-graph-brace{
+ 0%{transform:rotate(-6deg)}23%{transform:translate(-12%,-12%) rotate(-16deg)}
+ 47%{transform:translate(4%,42%) rotate(19deg)}66%{transform:translate(0,51%) rotate(12deg)}
+ 88%{transform:translateY(13%) rotate(-4deg)}100%{transform:none}
+}
+@keyframes mascot-brace{0%{transform:none}23%{transform:rotate(-66deg)}57%{transform:rotate(31deg)}100%{transform:rotate(-20deg)}}
+@keyframes mascot-impact{0%,49%,100%{opacity:0;transform:scale(.5)}58%{opacity:.67}83%{opacity:.18;transform:scale(2)}}
+@keyframes mascot-blush{0%,30%{fill:#c8f542}50%,68%{fill:#faad76}100%{fill:#c3ee55}}
+@keyframes mascot-hop{
+ 0%{transform:translateY(3%) scale(1.13,.79)}27%{transform:translateY(-9%) scale(.94,1.09)}
+ 46%{transform:translateY(2%) scale(1.08,.92)}66%{transform:translateY(-2%)}100%{transform:none}
+}
+@keyframes mascot-thumb-up{0%,41%{transform:none}69%{transform:rotate(-51deg)}100%{transform:rotate(-38deg)}}
+@keyframes mascot-show-thumb{0%,47%{opacity:0}48%,100%{opacity:1}}
+@keyframes mascot-hide-fist{0%,47%{opacity:1}48%,100%{opacity:0}}
+@keyframes mascot-grip{0%{transform:none}100%{transform:translateY(9%) scale(1.15,.72)}}
+@keyframes mascot-lift{
+ 0%{transform:translateY(9%) scale(1.15,.72)}30%{transform:scale(.91,1.12)}
+ 49%{transform:translateY(2%) scale(1.03,.96)}70%{transform:translateY(-2%) scale(.97,1.04)}100%{transform:none}
+}
+@keyframes mascot-bar{
+ 0%{transform:none}29%{transform:translateY(-23%)}39%{transform:translateY(-28%) rotate(-2deg)}
+ 68%{transform:translateY(-75%) scale(1.03)}82%{opacity:1;transform:translateY(-70%)}100%{opacity:0;transform:translateY(-74%)}
+}
+@keyframes mascot-pr-reveal{
+ 0%,59%{opacity:0;transform:translate(-50%,16%) scale(.8)}
+ 77%{opacity:1;transform:translate(-50%,-9%) scale(1.08)}
+ 92%{transform:translate(-50%,3%) scale(.97)}100%{transform:translateX(-50%)}
+}
+@keyframes mascot-party{
+ 0%{transform:translateY(3%) scale(1.13,.79)}24%{transform:translateY(-18%) rotate(-11deg) scale(.89,1.11)}
+ 49%{transform:translateY(3%) scale(1.13,.85)}67%{transform:translateY(-11%) rotate(9deg)}
+ 88%{transform:translateY(2%) scale(1.05,.94)}100%{transform:none}
+}
+@keyframes mascot-wave{0%,100%{transform:none}24%,62%{transform:rotate(48deg)}43%,76%{transform:rotate(69deg)}}
+@keyframes mascot-confetti{
+ 0%{opacity:0;transform:rotate(var(--angle)) translateY(-7px) rotate(10deg)}
+ 15%,64%{opacity:1}100%{opacity:0;transform:rotate(var(--angle)) translateY(-30cqi) rotate(124deg)}
+}
+.mascot-standalone{max-width:520px;margin:16px auto}
+@media(prefers-reduced-motion:reduce){
+ .mascot-scene *{animation:none!important;transition:none!important}
+}
+.mascot-lift-arms,.mascot-worry{opacity:0}
+.mascot-lift-left{transform-origin:42% 57%}
+.mascot-lift-right{transform-origin:58% 57%}
+[data-mascot=record]:is([data-phase=anticipation],[data-phase=record]) .mascot-lift-arms{opacity:1}
+[data-phase=record] .mascot-lift-left{animation:mascot-pull-left var(--beat) both}
+[data-phase=record] .mascot-lift-right{animation:mascot-pull-right var(--beat) both}
+[data-phase=down] .mascot-worry{animation:mascot-worry var(--beat) both}
+[data-phase=down] .mascot-face{animation:mascot-calm var(--beat) both}
+@keyframes mascot-pull-left{0%{transform:none}34%{transform:rotate(33deg) scaleY(.52)}68%,100%{transform:rotate(145deg) scaleY(1.75)}}
+@keyframes mascot-pull-right{0%{transform:none}34%{transform:rotate(-33deg) scaleY(.52)}68%,100%{transform:rotate(-145deg) scaleY(1.75)}}
+@keyframes mascot-worry{0%,13%,81%,100%{opacity:0}14%,80%{opacity:1}}
+@keyframes mascot-calm{0%,13%,81%,100%{opacity:1}14%,80%{opacity:0}}
+
+[data-phase=record] .mascot-lift-arms{animation:mascot-drop-arms var(--beat) both}
+[data-mascot=record][data-phase=record] :is(.mascot-arm-left,.mascot-arm-right){animation:mascot-finish-arms var(--beat) both}
+[data-phase=record] .mascot-arm-right{transform:rotate(-33deg)}
+@keyframes mascot-drop-arms{0%,86%{opacity:1}100%{opacity:0}}
+@keyframes mascot-finish-arms{0%,86%{opacity:0}100%{opacity:1}}

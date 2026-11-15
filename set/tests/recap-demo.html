@@ -12,12 +12,14 @@
  <h1>Демо СЕТ RECAP</h1>
  <p id="status">Доступно тільки на localhost.</p>
  <div class="btn-column" id="scenarios"></div>
+ <section id="mascot-lab"></section>
 </main>
 <script type="module">
  if(['localhost','127.0.0.1','[::1]'].includes(location.hostname)){
    const [{demoData,TODAY},{buildRecap,periodFor},{showRecap}]=await Promise.all([
      import('./recap-fixtures.mjs'),import('../js/recap.js'),import('../js/recap-view.js')
    ]);
+   const {mascotScene,mountMascot}=await import('../js/recap-mascot.js');
    document.getElementById('status').textContent='Синтетичний журнал у пам’яті. Жодного запису в сховище СЕТ.';
    for(const [id,label] of [['up','Високий прогрес'],['stable','Стабільність'],['down','Спад'],['insufficient','Недостатньо даних'],['records','Нові рекорди'],['empty','Порожній період']]){
      const button=document.createElement('button');
@@ -25,6 +27,26 @@
      button.onclick=()=>showRecap(buildRecap(demoData(id),periodFor('week','2026-11-16'),TODAY),{demo:true});
      document.getElementById('scenarios').append(button);
    }
+   const lab=document.getElementById('mascot-lab');
+   lab.innerHTML='<h2>Окремі анімації</h2><label class="filter-label">Стан маскота <select id="mascot-preview" class="field"></select></label><div class="mascot-standalone"></div>';
+   const picker=lab.querySelector('select'),stage=lab.querySelector('.mascot-standalone');
+   for(const [id,label] of [['idle','Спокій'],['anticipation','Підготовка'],['up','Стрибок угору'],['down','Падіння й відновлення'],['stable','Стабільність'],['record','Підйом штанги'],['celebration','Святкування'],['insufficient','Недостатньо даних']]){
+     picker.append(new Option(label,id));
+   }
+   let player;
+   const preview=()=>{
+     player?.dispose();
+     stage.innerHTML=mascotScene({state:picker.value});
+     player=mountMascot(stage.firstElementChild);
+   };
+   const replay=document.createElement('button');
+   replay.className='btn alt';replay.textContent='Повторити';
+   replay.onclick=()=>player.restart();
+   lab.append(replay);
+   picker.onchange=preview;
+   window.addEventListener('pagehide',()=>player?.dispose());
+   preview();
+
  }
 </script>
 </body>

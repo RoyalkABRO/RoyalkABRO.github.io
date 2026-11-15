@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildRecap,completedPeriod,kyivDay,kyivMidnight,periodFor,previousPeriod,recapArchive} from '../js/recap.js';
 import {recapDeadlines,recapPreferences,saveRecapPreferences,unreadRecaps} from '../js/recap-notices.js';
-import {arrowArt,recapHub,recapSlides} from '../js/recap-view.js';
+import {recapHub,recapSlides} from '../js/recap-view.js';
+import {mascotScene} from '../js/recap-mascot.js';
 import {OFFLINE_ASSETS,CACHE_NAME} from '../js/pwa.js';
 import {demoData,TODAY} from './recap-fixtures.mjs';
 import {readFileSync,existsSync} from 'node:fs';
@@ -48,12 +49,12 @@ test('four reveal states depend on logged performance, with distinct SVG/CSS mot
   assert.equal(r.strength.status,status);
   const slides=recapSlides(r);
   assert.equal(slides.length,8);
-  assert.equal(slides[1].art,status);
-  assert.match(arrowArt(status),new RegExp('data-motion="'+status+'"'));
+  assert.equal(slides[1].scene.state,status);
+  assert.match(mascotScene(slides[1].scene),new RegExp('data-mascot="'+status+'"'));
   assert.match(slides[6].body,/class="muscle-body"/);
  }
  const css=readFileSync(new URL('../recap.css',import.meta.url),'utf8');
- for(const name of ['recap-up','recap-steady','recap-down','recap-scan','prefers-reduced-motion'])assert.ok(css.includes(name));
+ for(const name of ['mascot-leap','mascot-hop','mascot-tumble','mascot-breathe','prefers-reduced-motion'])assert.ok(css.includes(name));
 });
 test('deload, machine changes, bands and new exercises do not create false progress',()=>{
  const data=demoData('down');
@@ -145,7 +146,7 @@ test('offline install caches complete RECAP module graph and notification clicks
   assert.ok(cache.has(new URL(file,scope).href));
   assert.ok(existsSync(new URL(file==='./'?'../index.html':'../'+file.slice(2),import.meta.url)));
  }
- for(const file of ['./recap.css','./js/recap.js','./js/recap-notices.js','./js/recap-view.js']){
+ for(const file of ['./recap.css','./js/recap.js','./js/recap-notices.js','./js/recap-view.js','./js/recap-mascot.js']){
   assert.ok((await event('fetch',{request:{url:new URL(file,scope).href,method:'GET'}})).ok);
  }
  assert.ok(!OFFLINE_ASSETS.some(file=>file.includes('demo')));

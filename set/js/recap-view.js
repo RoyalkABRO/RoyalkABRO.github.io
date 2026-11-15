@@ -1,3 +1,4 @@
+import {mascotScene,mascotSVG,mountMascot} from './recap-mascot.js';
 import {buildRecap,kyivDay,periodFor,completedPeriod,recapArchive} from './recap.js';
 import {recapNotice,unreadRecaps} from './recap-notices.js';
 import {recapMuscleMap} from './progress-overview.js';
@@ -20,17 +21,6 @@ const work=t=>metrics([['Обсяг',num(t.volume)+' кг'],['Повторенн
 const total=t=>metrics([['Тренування',num(t.workouts)],['Хвилини',num(t.minutes)],['Робочі підходи',num(t.sets)]]);
 const unit=r=>r.metric==='reps'?'повт.':'кг ≈1RM';
 const directionLabel={up:'Зростання',stable:'Стабільно',down:'Нижче'};
-
-export function arrowArt(state='intro'){
- const eyes=state==='down'?'<path d="m100 107 9 6m29-6-9 6" stroke-width="4"/>':'<ellipse cx="106" cy="111" rx="4" ry="7"/><ellipse cx="134" cy="111" rx="4" ry="7"/>';
- const mouth=state==='up'?'<path d="M111 124q9 17 18 0Z"/>':state==='down'?'<path d="M115 131q5-6 10 0" fill="none" stroke-width="3"/>':'<path d="M114 126q6 5 12 0" fill="none" stroke-width="3"/>';
- return `<div class="recap-stage" data-motion="${state}" aria-hidden="true"><div class="recap-radar"></div><span class="recap-trail"></span><span class="recap-shadow"></span>
- <svg class="recap-arrow" viewBox="0 0 240 240"><path class="recap-arrow-depth" d="m120 37 58 65q6 9-5 12h-21v69q0 12-12 12h-40q-12 0-12-12v-69H67q-11-3-5-12Z"/>
- <path class="recap-arrow-body" d="m120 27 58 65q6 9-5 12h-21v69q0 12-12 12h-40q-12 0-12-12v-69H67q-11-3-5-12Z"/>
- <path d="m78 92 42-47 21 24" fill="none" stroke="#fff" stroke-opacity=".56" stroke-linecap="round" stroke-width="3"/>
- <g class="recap-face">${eyes}${mouth}</g><path class="recap-arm" d="M89 133q-13 8-19-1m82 1q13 8 19-1"/></svg>
- ${Array.from({length:10},(_,i)=>`<i class="recap-spark" style="--angle:${i*36}deg;--spark:${i%3}"></i>`).join('')}</div>`;
-}
 
 function sparkline(values,label,split){
  if(values.length<2)return '';
@@ -84,16 +74,27 @@ function weeklyStrength(r){
 export function recapSlides(r){
  const monthly=r.period.kind==='month',status=RECAP_STATES[r.strength.status];
  const revealTitle=monthly&&r.strength.status==='down'?'НЕ КОЖЕН МІСЯЦЬ — РЕКОРД!':status.title;
+ const state=r.strength.status;
+ const decline=r.strength.rows.find(row=>row.direction==='down'&&row.before>0);
+ const delta=r.strength.delta;
+ const upProp=delta!==null?{kind:'score',value:signed(delta)+'%',label:'медіана змін ≈1RM'}:
+  {kind:'score',value:r.strength.comparable+' зіставних вправ',label:'Силова динаміка'};
+ const downProp=decline?{kind:'graph',label:decline.name, before:decline.before,after:decline.after,
+  value:num(decline.before)+' → '+num(decline.after)+' '+unit(decline)}:null;
  const slides=[
-  {title:r.period.intro,art:'intro',body:hint(html(r.period.label))},
-  {title:revealTitle,art:r.strength.status,body:(r.strength.delta===null?'':`<p class="recap-reveal-number">${signed(r.strength.delta)}% <small>медіана змін ≈1RM</small></p>`)+hint(status.caption)+hint(r.strength.comparable+' зіставних вправ')},
+  {title:r.period.intro,scene:{state:'idle'},hero:true,body:hint(html(r.period.label))},
+  {title:revealTitle,scene:{state,prop:state==='up'?upProp:state==='down'?downProp:null},hero:true,
+   body:(delta!==null&&state!=='up'?`<p class="recap-reveal-number">${signed(delta)}% <small>медіана змін ≈1RM</small></p>`:'')+
+    hint(status.caption)+hint(r.strength.comparable+' зіставних вправ')},
  ];
  const disciplineSlide={title:'Дисципліна',body:discipline(r)};
- const recordsSlide={title:'Особисті рекорди',body:prList(r.prs)};
+ const pr=bestPR(r);
+ const recordsSlide={title:'Особисті рекорди',scene:pr?{state:'record',
+  prop:{kind:'record',value:prText(pr),label:pr.name}}:null,body:prList(r.prs)};
  const dynamics={title:'Силова динаміка',body:deltas(r.strength.rows)+methodology()};
  const workload={title:'Виконана робота',body:work(r.totals)+(r.prior.workouts?metrics([['Зміна обсягу',signed(r.totals.volume-r.prior.volume)+' кг'],['Зміна повторів',signed(r.totals.reps-r.prior.reps)],['Зміна підходів',signed(r.totals.sets-r.prior.sets)]]):'')+hint('Тоннаж показує виконану роботу. Силова динаміка рахується окремо.')};
  const muscle={title:'М’язові групи',body:recapMuscleMap(r.muscles)};
- const finish={title:'Твій RECAP',body:finalSlide(r)};
+ const finish={title:'Твій RECAP',scene:r.totals.workouts?{state:'celebration'}:null,body:finalSlide(r)};
  if(!monthly)return [...slides,disciplineSlide,recordsSlide,dynamics,workload,muscle,finish];
  const biggest=r.strength.rows.filter(x=>x.direction==='up').sort((a,b)=>b.change-a.change)[0];
  const facts=hint(r.frequent?'Найчастіша вправа — '+html(r.frequent.name)+' · '+r.frequent.sessions.size+' занять.':'За цей місяць журнал порожній.')+
@@ -145,7 +146,17 @@ export function reportFromId(state,id){
  return period?buildRecap(state,period):null;
 }
 
-function exportCard(report){
+async function drawExportMascot(g,state){
+ const source=new Blob([mascotSVG(state,{card:true})],{type:'image/svg+xml'});
+ const url=URL.createObjectURL(source);
+ try{
+  const avatar=new Image();
+  await new Promise((resolve,reject)=>{avatar.onload=resolve;avatar.onerror=reject;avatar.src=url;});
+  g.drawImage(avatar,230,203,620,475);
+ }finally{URL.revokeObjectURL(url);}
+}
+
+async function exportCard(report){
  const canvas=document.createElement('canvas');
  canvas.width=1080;canvas.height=1350;
  const g=canvas.getContext('2d');
@@ -159,10 +170,7 @@ function exportCard(report){
  };
  line('СЕТ RECAP',52,76,125,accent);
  line(period.label,42,76,200);
- g.fillStyle=accent;g.beginPath();
- [[540,265],[700,425],[620,425],[620,585],[460,585],[460,425],[380,425]].forEach(([x,y],i)=>i?g.lineTo(x,y):g.moveTo(x,y));g.closePath();g.fill();
- g.fillStyle='#20251b';for(const x of [510,570]){g.beginPath();g.ellipse(x,431,8,13,0,0,Math.PI*2);g.fill();}
- g.strokeStyle='#20251b';g.lineWidth=5;g.beginPath();g.moveTo(523,460);g.quadraticCurveTo(540,483,557,460);g.stroke();
+ await drawExportMascot(g,strength.status);
  const headline=period.kind==='month'&&strength.status==='down'?'НЕ КОЖЕН МІСЯЦЬ — РЕКОРД!':RECAP_STATES[strength.status].title;
  line(headline,60,76,695);
  line(totals.workouts+' трен.   ·   '+totals.sets+' підходів   ·   '+prs.length+' рек.',44,76,800,accent);
@@ -179,7 +187,7 @@ export function showRecap(report,{demo=false}={}){
  dialog.className='recap-dialog';
  dialog.setAttribute('aria-labelledby','recap-slide-title');
  const opener=document.activeElement;
- let index=0,blob=null,pending=null,url=null;
+ let index=0,blob=null,pending=null,url=null,animator=null;
  const updateExport=()=>{
   if(index!==slides.length-1)return;
   const save=dialog.querySelector('[data-recap-download]'),share=dialog.querySelector('[data-recap-share]');
@@ -191,14 +199,35 @@ export function showRecap(report,{demo=false}={}){
  };
  const status=message=>{const node=dialog.querySelector('[data-recap-export-status]');if(node)node.textContent=message;};
  const display=()=>{
-  const slide=slides[index];
+  animator?.dispose();animator=null;
+  const slide=slides[index],scene=slide.scene;
   dialog.innerHTML=`<div class="recap-shell"><header class="recap-top"><div class="recap-segments" role="progressbar" aria-label="Прогрес підсумку" aria-valuemin="1" aria-valuemax="${slides.length}" aria-valuenow="${index+1}">${slides.map((_,i)=>`<i class="${i<=index?'is-read':''}"></i>`).join('')}</div>
    <div class="recap-topline"><span>${demo?'ДЕМО · ':'СЕТ RECAP · '}${html(report.period.label)}</span><button type="button" class="icon-btn" data-recap-control="close" aria-label="Закрити RECAP">×</button></div></header>
-   <main class="recap-slide ${slide.art?'recap-hero':''}" data-state="${slide.art||'detail'}" tabindex="-1">
-   ${slide.art?arrowArt(slide.art):''}<h2 id="recap-slide-title" tabindex="-1">${slide.title}</h2>${slide.body}</main>
+   <main class="recap-slide ${slide.hero?'recap-hero':''} ${scene?'mascot-recap-slide':''}" tabindex="-1">
+   ${slide.hero&&scene?mascotScene(scene):''}<h2 id="recap-slide-title" tabindex="-1">${slide.title}</h2>
+   ${!slide.hero&&scene?mascotScene(scene):''}
+   ${scene?`<div class="mascot-controls"><button class="text-btn" type="button" data-recap-control="pause-motion">Пауза</button>
+    <button class="text-btn" type="button" data-recap-control="skip-motion">Пропустити анімацію</button>
+    <button class="text-btn" type="button" data-recap-control="replay-motion" hidden>Повторити анімацію</button></div>`:''}
+   ${slide.body}</main>
    <footer class="recap-footer"><button class="btn alt" type="button" data-recap-control="back" ${index===0?'disabled':''}>Назад</button>
    ${index<2?'<button class="text-btn" type="button" data-recap-control="skip">До статистики</button>':'<span>'+ (index+1)+' / '+slides.length+'</span>'}
    <button class="btn" type="button" data-recap-control="next">${index===slides.length-1?'Готово':'Далі'}</button></footer></div>`;
+  if(scene){
+   animator=mountMascot(dialog.querySelector('.mascot-scene'),{
+    onMotionChange(reduced,completed){
+     if(completed)dialog.querySelector('[data-recap-control="replay-motion"]').hidden=reduced;
+    },
+    onComplete:()=>{
+    const pause=dialog.querySelector('[data-recap-control="pause-motion"]');
+    const skip=dialog.querySelector('[data-recap-control="skip-motion"]');
+    const replay=dialog.querySelector('[data-recap-control="replay-motion"]');
+    const keepFocus=[pause,skip].includes(document.activeElement);
+    pause.hidden=skip.hidden=true;
+    replay.hidden=Boolean(globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+    if(keepFocus)(replay.hidden?dialog.querySelector('[data-recap-control="next"]'):replay).focus();
+   }});
+  }
   dialog.querySelector('#recap-slide-title').focus({preventScroll:true});
   if(index===slides.length-1){
    if(!pending)pending=Promise.resolve().then(()=>exportCard(report)).then(value=>{blob=value;updateExport();}).catch(e=>status(e.message));
@@ -213,6 +242,13 @@ export function showRecap(report,{demo=false}={}){
   if(['next','back','skip'].includes(action)){
    index=action==='skip'?2:index+(action==='next'?1:-1);
    display();return;
+  }
+  if(action==='pause-motion'){target.textContent=animator?.pause()?'Продовжити':'Пауза';return;}
+  if(action==='skip-motion'){animator?.skip();return;}
+  if(action==='replay-motion'){
+   for(const mode of ['pause-motion','skip-motion'])dialog.querySelector('[data-recap-control="'+mode+'"]').hidden=false;
+   const pause=dialog.querySelector('[data-recap-control="pause-motion"]');
+   pause.textContent='Пауза';target.hidden=true;pause.focus();animator?.restart();return;
   }
   if(action==='recap-share'&&blob){
    const file=new File([blob],'SET-RECAP.png',{type:'image/png'});
@@ -229,6 +265,7 @@ export function showRecap(report,{demo=false}={}){
   if(event.key==='ArrowLeft'&&index>0){event.preventDefault();index--;display();}
  });
  dialog.addEventListener('close',()=>{
+  animator?.dispose();animator=null;
   if(url)setTimeout(()=>URL.revokeObjectURL(url),30000);
   dialog.remove();document.body.classList.remove('recap-open');
   if(opener?.isConnected)opener.focus();
