@@ -1,12 +1,18 @@
 import {isWorking,workingSets,previousDuration} from './progression.js';
-import {getOrCreateExercise,previousSets,uid} from './model.js';
+import {exerciseConfig} from './exercise-config.js';
+import {restOwner} from './timer.js';
+import {getOrCreateExercise,createSessionExercise,uid} from './model.js';
 import {newestFirst} from './history-index.js';
 export const EQUIPMENT_FIELDS=[['seat','Сидіння'],['bench','Нахил лавки'],['pin','Положення блока'],['grip','Хват / руків’я']];
-export function equipmentText(e){return EQUIPMENT_FIELDS.filter(([key])=>e.equipment?.[key]).map(([key,label])=>label+': '+e.equipment[key]).join(' · ');}
+export function equipmentText(e){
+ const fields=EQUIPMENT_FIELDS.filter(([key])=>e.equipment?.[key]).map(([key,label])=>label+': '+e.equipment[key]);
+ if(e.training?.equipmentType==='pullup'&&e.training.band)fields.unshift('Резинка: '+e.training.band);
+ return fields.join(' · ');
+}
 export function focusExercise(session,selected){return session?.exercises.find(e=>e.id===selected)||session?.exercises.find(e=>e.sets.some(s=>!s.done&&!s.skipped))||session?.exercises[0]||null;}
 export function upcomingExercise(session,currentId){const es=session?.exercises||[],i=es.findIndex(e=>e.id===currentId);return es.slice(i+1).find(e=>e.sets.some(s=>!s.done&&!s.skipped))||es.slice(0,Math.max(0,i)).find(e=>e.sets.some(s=>!s.done&&!s.skipped))||null;}
 export function restDestination(state,focusId){
- const current=focusExercise(state.session,focusId),work=current?workingSets(current):[];
+ const current=restOwner(state)||focusExercise(state.session,focusId),work=current?workingSets(current):[];
  const next=state.restKind==='exercise'&&work.length&&current.sets.every(s=>s.done||s.skipped)?upcomingExercise(state.session,current.id):null;
  return {current,next};
 }
@@ -25,9 +31,10 @@ export function replaceExercise(state,sessionId,name,reps){
  const e=state.session.exercises[index],remaining=workingSets(e).filter(s=>!s.done&&!s.skipped).length;if(!remaining)throw Error('Усі робочі підходи вже виконано');
  if(!Number.isInteger(reps)||reps<1||reps>1000)throw Error('Повторення: від 1 до 1000');
  const catalog=getOrCreateExercise(state,name);if(catalog.id===e.exerciseId)throw Error('Обери іншу вправу');
- const previous=previousSets(state,catalog.id),cfg={};for(const key of ['note','equipment','weightStep','weightBasis'])if(catalog[key]!==undefined)cfg[key]=structuredClone(catalog[key]);
- const replacement={id:uid(),exerciseId:catalog.id,name:catalog.name,...cfg,replacementFor:{exerciseId:e.exerciseId,name:e.name},targetSets:remaining,targetReps:reps,sets:Array.from({length:remaining},(_,i)=>({id:uid(),weight:previous[i]?.weight??previous.at(-1)?.weight??'',reps,done:false}))};
- const completed=e.sets.filter(s=>s.done);if(completed.length){if(state.session.exercises.length>=200)throw Error('Максимум 200 вправ');const goal=e.goal?{...e.goal,sets:e.goal.sets.filter((_,i)=>workingSets(e)[i]?.done)}:null;e.sets=completed;if(goal)e.goal=goal;state.session.exercises.splice(index+1,0,replacement);}else state.session.exercises.splice(index,1,replacement);
+ const replacement=createSessionExercise(state,catalog,remaining,{name:catalog.name,targetReps:reps,targetRepsMax:Math.max(reps,exerciseConfig(catalog).max)});
+ replacement.replacementFor={exerciseId:e.exerciseId,name:e.name};
+ if(workingSets(e).some(s=>s.skipped)||workingSets(e).length<(e.targetSets??1))state.session.progressionBlocked=true;
+ const completed=e.sets.filter(s=>s.done);if(completed.length){if(state.session.exercises.length>=200)throw Error('Максимум 200 вправ');const goal=e.goal?{...e.goal,sets:e.goal.sets.filter((_,i)=>workingSets(e)[i]?.done)}:null;e.sets=completed;e.targetSets=completed.filter(isWorking).length||undefined;if(goal)e.goal=goal;state.session.exercises.splice(index+1,0,replacement);}else state.session.exercises.splice(index,1,replacement);
  return replacement.id;
 }
 export function optionalSets(session){return (session?.exercises||[]).flatMap(e=>workingSets(e).slice(e.targetSets||4).filter(s=>!s.done&&!s.skipped).map(s=>({exerciseId:e.id,setId:s.id,name:e.name})));}
@@ -38,15 +45,17 @@ export function forecastSession(state,now=Date.now()){
  let estimated=false,cycle=.75+state.restSeconds/60,source='за часом підходу й відпочинку';
  if(priorCount){estimated=true;cycle=Math.max(.5,Math.min(8,previousDuration(state)/priorCount));source='за минулим заняттям';}
  if(done>=3&&elapsed>=3){estimated=true;cycle=Math.max(.5,Math.min(8,elapsed/done));source='за поточним темпом';}
- const remainingExercises=w.exercises.filter(e=>workingSets(e).some(s=>!s.done&&!s.skipped)).length;
- const baseline=pending*.75+Math.max(0,pending-remainingExercises)*state.restSeconds/60+Math.max(0,remainingExercises-1)*(state.exerciseRestSeconds??180)/60+Math.max(0,((state.restEndsAt||now)-now)/60000);
+ const remainingExercises=w.exercises.filter(e=>workingSets(e).some(s=>!s.done&&!s.skipped));
+ const rest=remainingExercises.reduce((sum,e,i)=>sum+
+   (workingSets(e).filter(s=>!s.done&&!s.skipped).length-(i===remainingExercises.length-1?1:0))*exerciseConfig(e).restSeconds,0);
+ const baseline=pending*.75+rest/60+Math.max(0,((state.restEndsAt||now)-now)/60000);
  const left=(estimated?pending*cycle:baseline)+warm*(.5+state.warmupRestSeconds/60),minutes=Math.ceil(left),finish=now+minutes*60000;
  return {elapsed,minutes,finish,total:Math.ceil(elapsed+left),over:elapsed+left>90,source,pending,done,optional:optionalSets(w)};
 }
 
 export function restAfterSet(state,exercise,set){
  if(set.type==='warmup')return {seconds:state.warmupRestSeconds,kind:'warmup'};
- if(workingSets(exercise).some(s=>!s.done&&!s.skipped))return {seconds:state.restSeconds,kind:'set'};
- const hasNext=state.session.exercises.some(e=>e.id!==exercise.id&&workingSets(e).some(s=>!s.done&&!s.skipped));
- return {seconds:hasNext?state.exerciseRestSeconds:0,kind:'exercise'};
+ const hasNext=!workingSets(exercise).some(s=>!s.done&&!s.skipped)&&
+   state.session.exercises.some(e=>e.id!==exercise.id&&workingSets(e).some(s=>!s.done&&!s.skipped));
+ return {seconds:exerciseConfig(exercise).restSeconds,kind:hasNext?'exercise':'set'};
 }

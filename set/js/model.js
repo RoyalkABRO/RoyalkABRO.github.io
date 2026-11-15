@@ -1,5 +1,6 @@
 import {MUSCLE_IDS} from './muscles.js';
 import {isWorking} from './progression.js';
+import {equipmentKey, exerciseConfig, exerciseIdentity, exercisePreset, PERSONAL_PLAN_ADDITIONS, normalizeTraining, trainingSnapshot} from './exercise-config.js';
 import {newestFirst} from './history-index.js';
 export const VERSION = 2;
 export const LEGACY_KEY = 'set_workout_v1';
@@ -8,7 +9,7 @@ export const REST_OPTIONS = [30,60,90,120,180,240,300];
 export const uid = () => globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
 export const clone = value => structuredClone(value);
 export const nameKey = name => name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('uk-UA');
-export const fresh = () => ({version:VERSION,catalog:[],templates:[1,3,5].map((day,i)=>({id:uid(),name:`Тренування ${'ABC'[i]}`,day,exercises:[]})),history:[],session:null,restEndsAt:null,restSeconds:90,restDuration:90,warmupRestSeconds:60,exerciseRestSeconds:180,restKind:'set',restSetId:null,lastBackupAt:null,keepAwake:false,focusWorkout:true});
+export const fresh = () => ({version:VERSION,exerciseSettingsVersion:1,catalog:[],templates:[1,3,5].map((day,i)=>({id:uid(),name:`Тренування ${'ABC'[i]}`,day,exercises:[]})),history:[],session:null,restEndsAt:null,restSeconds:90,restDuration:90,restBaseSeconds:90,warmupRestSeconds:60,exerciseRestSeconds:180,restKind:'set',restSetId:null,lastBackupAt:null,keepAwake:false,focusWorkout:true});
 const fail = message => { throw new Error(message); };
 const object = x => x && typeof x === 'object' && !Array.isArray(x);
 const text = (x, max=120) => typeof x === 'string' && x.trim().length > 0 && x.length <= max;
@@ -22,7 +23,39 @@ export function validSet(s, completed=false) {
   if (completed || s.done) return /^(?:\d+(?:\.\d*)?|\.\d+)$/.test(String(s.weight)) && Number.isFinite(Number(s.weight)) && Number(s.weight)>=0 && Number(s.weight)<=10000 && /^\d+$/.test(String(s.reps)) && Number.isInteger(Number(s.reps)) && Number(s.reps)>0 && Number(s.reps)<=1000;
   return ['string','number'].includes(typeof s.weight) && ['string','number'].includes(typeof s.reps) && String(s.weight).length<=24 && String(s.reps).length<=24;
 }
-function trainingConfig(e){const out={};if(e.muscleGroup!==undefined){if(![...MUSCLE_IDS,'none'].includes(e.muscleGroup))fail('Некоректна група м’язів');out.muscleGroup=e.muscleGroup;}if(e.equipment!==undefined){if(!object(e.equipment)||Object.keys(e.equipment).some(k=>!['seat','bench','pin','grip'].includes(k))||Object.values(e.equipment).some(v=>typeof v!=='string'||v.length>80))fail('Некоректні налаштування обладнання');out.equipment=Object.fromEntries(Object.entries(e.equipment).map(([k,v])=>[k,v.trim()]));}if(e.weightStep!==undefined){if(typeof e.weightStep!=='number'||!Number.isFinite(e.weightStep)||e.weightStep<=0||e.weightStep>1000)fail('Крок ваги: від 0 до 1000 кг');out.weightStep=e.weightStep;}if(e.weightBasis!==undefined){if(!['total','one-dumbbell'].includes(e.weightBasis))fail('Некоректний спосіб запису ваги');out.weightBasis=e.weightBasis;}return out;}
+function trainingConfig(e){
+  const out=normalizeTraining(e.training);
+  if(e.muscleGroup!==undefined){
+    if(![...MUSCLE_IDS,'none'].includes(e.muscleGroup))fail('Некоректна група м’язів');
+    out.muscleGroup=e.muscleGroup;
+  }
+  if(e.equipment!==undefined){
+    if(!object(e.equipment)||Object.keys(e.equipment).some(k=>!['seat','bench','pin','grip'].includes(k))||
+      Object.values(e.equipment).some(v=>typeof v!=='string'||v.length>80))fail('Некоректні налаштування обладнання');
+    out.equipment=Object.fromEntries(Object.entries(e.equipment).map(([k,v])=>[k,v.trim()]));
+  }
+  if(e.weightStep!==undefined){
+    if(typeof e.weightStep!=='number'||!Number.isFinite(e.weightStep)||e.weightStep<=0||e.weightStep>1000)fail('Крок ваги: від 0 до 1000 кг');
+    out.weightStep=e.weightStep;
+  }
+  if(e.weightBasis!==undefined){
+    if(!['total','one-dumbbell'].includes(e.weightBasis))fail('Некоректний спосіб запису ваги');
+    out.weightBasis=e.weightBasis;
+  }
+  return out;
+}
+function catalogConfig(e) {
+  const declined=e.declinedProgression;
+  if(declined!==undefined&&(!list(declined,30)||declined.some(key=>!text(key,4000))))fail('Некоректні відхилені рекомендації');
+  return {...trainingConfig(e),...(declined?.length?{declinedProgression:[...declined]}:{})};
+}
+function progressionFlags(w) {
+  for(const key of ['progressionBlocked','progressionComplete']) {
+    if(w[key]!==undefined&&typeof w[key]!=='boolean')fail('Некоректний статус прогресії');
+  }
+  return {...(w.progressionBlocked?{progressionBlocked:true}:{}),
+    ...(w.progressionComplete!==undefined?{progressionComplete:w.progressionComplete}:{})};
+}
 function goalData(e){if(e.goal===undefined)return {};const g=e.goal;if(!object(g)||!list(g.sets,200)||!g.sets.every(s=>object(s)&&typeof s.weight==='number'&&typeof s.reps==='number'&&validSet({id:'goal',weight:s.weight,reps:s.reps,done:true},true))||typeof g.reason!=='string'||g.reason.length>300||!['normal','easy','manual'].includes(g.mode))fail('Некоректна ціль заняття');return {goal:{sets:g.sets.map(s=>({weight:s.weight,reps:s.reps})),reason:g.reason,mode:g.mode}};}
 export function repTarget(e){
   if(e.targetRepsUnspecified)return 'повторення за фактом';
@@ -44,21 +77,56 @@ export function normalize(raw) {
   const out = {...fresh(),templates:[],history:[],catalog:[]};
   if (!legacy) {
     if (!list(raw.catalog,10000) || !raw.catalog.every(e=>object(e)&&id(e.id)&&text(e.name,90)) || !unique(raw.catalog)) fail('Пошкоджений каталог вправ');
-    out.catalog = raw.catalog.map(e=>({id:e.id,name:e.name.trim(),...note(e.note),...trainingConfig(e)}));
+    out.catalog = raw.catalog.map(e=>({id:e.id,name:e.name.trim(),...note(e.note),...catalogConfig(e)}));
+  }
+  const applyInitialRanges = raw.exerciseSettingsVersion !== 1;
+  if(applyInitialRanges&&!legacy){
+    const nameById=new Map();
+    for(const template of raw.templates)for(const row of Array.isArray(template?.exercises)?template.exercises:[]){
+      if(row&&exercisePreset(row.name))nameById.set(row.exerciseId,row.name);
+    }
+    for(const e of out.catalog){
+      if(!e.training&&!exercisePreset(e.name)&&nameById.has(e.id)){
+        e.training=trainingSnapshot({...e,name:nameById.get(e.id)}).training;
+      }
+    }
   }
   function exerciseId(e) {
     if (!legacy) { if (!id(e.exerciseId) || !out.catalog.some(x=>x.id===e.exerciseId)) fail('Невідома вправа'); return e.exerciseId; }
-    let found=out.catalog.find(x=>nameKey(x.name)===nameKey(e.name));
+    let found=out.catalog.find(x=>nameKey(x.name)===nameKey(e.name)) ||
+      out.catalog.find(x=>exerciseIdentity(x.name)===exerciseIdentity(e.name));
     if (!found) {found={id:uid(),name:e.name.trim()};out.catalog.push(found);} return found.id;
   }
   function checkExercise(e) { if (!object(e)||!id(e.id)||!text(e.name,90)) fail('Пошкоджена вправа'); }
   for (const t of raw.templates) {
     if (!object(t)||!id(t.id)||!text(t.name,70)||!Number.isInteger(t.day)||t.day<0||t.day>6||!list(t.exercises,200)||!unique(t.exercises)) fail('Пошкоджений план');
     out.templates.push({id:t.id,name:t.name.trim(),day:t.day,exercises:t.exercises.map(e=>{
-      checkExercise(e); const targetSets=legacy?3:e.targetSets; const targetReps=legacy?8:e.targetReps;
+      checkExercise(e); const targetSets=legacy?3:e.targetSets; const exerciseKey=exerciseId(e);
+      const catalog=out.catalog.find(x=>x.id===exerciseKey);
+      const defaults=applyInitialRanges&&(catalog.training||exercisePreset(catalog.name)||exercisePreset(e.name)||legacy||e.targetRepsUnspecified||e.targetRepsMax===undefined)
+        ?exerciseConfig(catalog.training||exercisePreset(catalog.name)?catalog:{...catalog,name:e.name}):null;
+      const targetReps=defaults?.min??(legacy?8:e.targetReps);
       if (!Number.isInteger(targetSets)||targetSets<1||targetSets>20||!Number.isInteger(targetReps)||targetReps<1||targetReps>1000) fail('Некоректна ціль підходів');
-      return {id:e.id,exerciseId:exerciseId(e),name:e.name.trim(),targetSets,targetReps,...(legacy?{}:repOptions(e))};
+      return {id:e.id,exerciseId:exerciseKey,name:e.name.trim(),targetSets,targetReps,
+        ...(defaults?{targetRepsMax:defaults.max}:legacy?{}:repOptions(e))};
     })});
+  }
+  if(applyInitialRanges){
+    for(const template of out.templates){
+      const addition=Object.hasOwn(PERSONAL_PLAN_ADDITIONS,template.id)
+        ?PERSONAL_PLAN_ADDITIONS[template.id]:null;
+      if(!addition||template.exercises.length>=200)continue;
+      const identity=exerciseIdentity(addition.name);
+      const matches=(row,key)=>exerciseIdentity(row.name)===key||
+        exerciseIdentity(out.catalog.find(c=>c.id===row.exerciseId)?.name)===key;
+      if(template.exercises.some(row=>matches(row,identity)))continue;
+      const exercise=getOrCreateExercise(out,addition.name);
+      const config=exerciseConfig(exercise);
+      const after=template.exercises.findIndex(row=>matches(row,exerciseIdentity(addition.after)));
+      const insertAt=after<0?template.exercises.length:after+1;
+      template.exercises.splice(insertAt,0,{id:uid(),exerciseId:exercise.id,name:exercise.name,
+        targetSets:4,targetReps:config.min,targetRepsMax:config.max});
+    }
   }
   function workout(w, completed) {
     if (!object(w)||!id(w.id)||!text(w.title,70)||!date(w.startedAt)||!list(w.exercises,200)||!unique(w.exercises)||!(w.templateId===null||id(w.templateId))) fail('Пошкоджене тренування');
@@ -74,10 +142,24 @@ export function normalize(raw) {
       return {id:e.id,exerciseId:exerciseId(e),name:e.name.trim(),...note(e.note),...targets,sets:e.sets.map(s=>({id:s.id,weight:completed?Number(s.weight):s.weight,reps:completed?Number(s.reps):s.reps,done:completed?true:s.done,...(s.skipped&&!completed?{skipped:true}:{}),...(s.type!==undefined?{type:s.type}:{}),...(s.rir!==undefined?{rir:s.rir}:{})}))};
     });
     if (completed&&!exercises.length) fail('Порожній запис історії');
-    return {id:w.id,templateId:w.templateId,title:w.title.trim(),startedAt:w.startedAt,...(completed&&w.goalProgress?{goalProgress:{...w.goalProgress}}:{}),...note(w.note),...(w.easy!==undefined?{easy:w.easy===true}:{}),...(completed?{finishedAt:w.finishedAt}:{}),exercises};
+    return {id:w.id,templateId:w.templateId,title:w.title.trim(),startedAt:w.startedAt,...(completed&&w.goalProgress?{goalProgress:{...w.goalProgress}}:{}),...note(w.note),...progressionFlags(w),...(w.easy!==undefined?{easy:w.easy===true}:{}),...(completed?{finishedAt:w.finishedAt}:{}),exercises};
   }
   out.history=raw.history.map(w=>workout(w,true)).sort((a,b)=>Date.parse(a.finishedAt)-Date.parse(b.finishedAt));
   out.session=raw.session==null?null:workout(raw.session,false);
+  if(applyInitialRanges && out.session) {
+    for(const active of out.session.exercises) {
+      const catalog=out.catalog.find(e=>e.id===active.exerciseId);
+      const planned=out.templates.find(t=>t.id===out.session.templateId)?.exercises.find(e=>e.exerciseId===active.exerciseId);
+      const source={weightStep:catalog.weightStep,...active,name:exercisePreset(active.name)?active.name:catalog.name,
+        ...(active.training?{}:catalog.training?{training:{...catalog.training,band:null}}:{})};
+      const c=exerciseConfig(source);
+      if(!active.training)Object.assign(active,trainingSnapshot(source));
+      active.targetReps=planned?.targetReps??c.min;
+      active.targetRepsMax=planned ? (planned.targetRepsMax??planned.targetReps) : c.max;
+      active.targetSets??=planned?.targetSets??(active.sets.filter(isWorking).length||1);
+      delete active.targetRepsUnspecified;
+    }
+  }
   if(out.session&&out.history.some(w=>w.id===out.session.id)) fail('Поточне тренування вже є в історії');
   if (!unique(out.templates)||!unique(out.history)) fail('Повторні ідентифікатори записів');
   out.warmupRestSeconds=REST_OPTIONS.includes(raw.warmupRestSeconds)?raw.warmupRestSeconds:60;
@@ -86,6 +168,7 @@ export function normalize(raw) {
   out.restKind=['warmup','set','exercise'].includes(raw.restKind)?raw.restKind:'set';
   out.restSetId=out.session&&id(raw.restSetId)?raw.restSetId:null;
   out.restDuration=Number.isFinite(raw.restDuration)&&raw.restDuration>0&&raw.restDuration<=86400?raw.restDuration:out.restSeconds;
+  out.restBaseSeconds=Number.isInteger(raw.restBaseSeconds)&&raw.restBaseSeconds>0&&raw.restBaseSeconds<=86400?raw.restBaseSeconds:Math.max(1,Math.round(out.restDuration));
   out.restEndsAt=out.session&&Number.isFinite(raw.restEndsAt)&&raw.restEndsAt>0?raw.restEndsAt:null;
   out.lastBackupAt=date(raw.lastBackupAt)?raw.lastBackupAt:null;
   out.keepAwake=raw.keepAwake===true;
@@ -95,12 +178,15 @@ export function normalize(raw) {
 export function getOrCreateExercise(state,name) {
   const clean=name.trim().replace(/\s+/g,' ');
   if (!text(clean,90)) fail('Вкажи назву вправи до 90 символів');
-  let found=state.catalog.find(e=>nameKey(e.name)===nameKey(clean));
+  let found=state.catalog.find(e=>nameKey(e.name)===nameKey(clean)) ||
+    state.catalog.find(e=>exerciseIdentity(e.name)===exerciseIdentity(clean));
   if (!found) {found={id:uid(),name:clean};state.catalog.push(found);} return found;
 }
-export function previousSets(state,exerciseId) {
+export function previousSets(state,exerciseId,setup) {
   for(const w of newestFirst(state.history)) {
-    const sets=w.exercises.filter(e=>e.exerciseId===exerciseId).flatMap(e=>e.sets).filter(isWorking);
+    const sets=w.exercises.filter(e=>e.exerciseId===exerciseId && (!setup ||
+      (equipmentKey(e)===equipmentKey(setup) && (exerciseConfig(setup).equipmentType!=='pullup'||e.training))))
+      .flatMap(e=>e.sets).filter(isWorking);
     if(sets.length) return sets;
   } return [];
 }
@@ -117,12 +203,12 @@ export function normalizeSession(raw, catalog) {
     if(e.targetReps!==undefined){if(!Number.isInteger(e.targetReps)||e.targetReps<1||e.targetReps>1000)fail('Некоректна ціль повторень');Object.assign(targets,{targetReps:e.targetReps},repOptions(e));}
     return {id:e.id,exerciseId:e.exerciseId,name:e.name.trim(),...note(e.note),...targets,sets:e.sets.map(s=>({id:s.id,weight:s.weight,reps:s.reps,done:s.done,...(s.skipped?{skipped:true}:{}),...(s.type!==undefined?{type:s.type}:{}),...(s.rir!==undefined?{rir:s.rir}:{})}))};
   });
-  return {id:raw.id,templateId:raw.templateId,title:raw.title.trim(),startedAt:raw.startedAt,...note(raw.note),...(raw.easy!==undefined?{easy:raw.easy===true}:{}),exercises};
+  return {id:raw.id,templateId:raw.templateId,title:raw.title.trim(),startedAt:raw.startedAt,...note(raw.note),...progressionFlags(raw),...(raw.easy!==undefined?{easy:raw.easy===true}:{}),exercises};
 }
 export function normalizeMeta(raw, currentState) {
   const out={...currentState};
   if (!list(raw.catalog,10000) || !raw.catalog.every(e=>object(e)&&id(e.id)&&text(e.name,90)) || !unique(raw.catalog)) fail('Пошкоджений каталог вправ');
-  out.catalog = raw.catalog.map(e=>({id:e.id,name:e.name.trim(),...note(e.note),...trainingConfig(e)}));
+  out.catalog = raw.catalog.map(e=>({id:e.id,name:e.name.trim(),...note(e.note),...catalogConfig(e)}));
   out.session = normalizeSession(raw.session, out.catalog);
   if(out.session&&out.history.some(w=>w.id===out.session.id)) fail('Поточне тренування вже є в історії');
   out.warmupRestSeconds=REST_OPTIONS.includes(raw.warmupRestSeconds)?raw.warmupRestSeconds:60;
@@ -131,18 +217,35 @@ export function normalizeMeta(raw, currentState) {
   out.restKind=['warmup','set','exercise'].includes(raw.restKind)?raw.restKind:'set';
   out.restSetId=out.session&&id(raw.restSetId)?raw.restSetId:null;
   out.restDuration=Number.isFinite(raw.restDuration)&&raw.restDuration>0&&raw.restDuration<=86400?raw.restDuration:out.restSeconds;
+  out.restBaseSeconds=Number.isInteger(raw.restBaseSeconds)&&raw.restBaseSeconds>0&&raw.restBaseSeconds<=86400?raw.restBaseSeconds:Math.max(1,Math.round(out.restDuration));
   out.restEndsAt=out.session&&Number.isFinite(raw.restEndsAt)&&raw.restEndsAt>0?raw.restEndsAt:null;
   out.lastBackupAt=date(raw.lastBackupAt)?raw.lastBackupAt:null;
   out.keepAwake=raw.keepAwake===true;
   out.focusWorkout=true;
   return out;
 }
+export function createSessionExercise(state,catalog,count,plan) {
+  const source=(!catalog.training&&!exercisePreset(catalog.name)&&exercisePreset(plan?.name))
+    ?{...catalog,name:plan.name}:catalog;
+  const config=exerciseConfig(source);
+  const exercise={id:uid(),exerciseId:catalog.id,name:plan?.name??catalog.name,...note(catalog.note),
+    ...trainingSnapshot(source),targetSets:count,targetReps:plan?.targetReps??config.min,
+    ...(plan?repOptions(plan):{targetRepsMax:config.max})};
+  const prior=previousSets(state,catalog.id,exercise);
+  exercise.sets=Array.from({length:count},(_,i)=>({
+    id:uid(),done:false,
+    weight:prior[i]?.weight??prior.at(-1)?.weight??(config.equipmentType==='pullup'?0:''),
+    reps:prior[i]?.reps??(exercise.targetRepsUnspecified?'':exercise.targetReps)
+  }));
+  return exercise;
+}
+
 export function startSession(state,templateId) {
   if(state.session) fail('Спочатку заверши поточне тренування');
   const t=state.templates.find(t=>t.id===templateId); if(!t) fail('План не знайдено');
   state.session={id:uid(),templateId:t.id,title:t.name,startedAt:new Date().toISOString(),exercises:t.exercises.map(e=>{
-    const prior=previousSets(state,e.exerciseId);
-    return {id:uid(),exerciseId:e.exerciseId,name:e.name,...note(state.catalog.find(x=>x.id===e.exerciseId)?.note),targetSets:e.targetSets,...trainingConfig(state.catalog.find(x=>x.id===e.exerciseId)||{}),targetReps:e.targetReps,...repOptions(e),sets:Array.from({length:e.targetSets},(_,i)=>({id:uid(),weight:prior[i]?.weight??prior.at(-1)?.weight??'',reps:prior[i]?.reps??(e.targetRepsUnspecified?'':e.targetReps),done:false}))};
+    const catalog=state.catalog.find(x=>x.id===e.exerciseId);
+    return createSessionExercise(state,catalog,e.targetSets,e);
   })};state.restEndsAt=null;state.restSetId=null;state.focusWorkout=true;
 }
 export function finishSession(state) {
@@ -151,10 +254,21 @@ export function finishSession(state) {
   const exercises=state.session.exercises.map(e=>({...e,...(e.goal?{goal:{...e.goal,sets:e.goal.sets.filter((_,i)=>e.sets.filter(isWorking)[i]?.done)}}:{}),sets:e.sets.filter(s=>s.done).map(s=>({...s,weight:Number(s.weight),reps:Number(s.reps)}))})).filter(e=>e.sets.length);
   if(!exercises.length) fail('Відміть хоча б один виконаний підхід');
   if(exercises.some(e=>e.sets.some(s=>!validSet(s,true)))) fail('Перевір вагу та повторення');
-  state.history.push({...state.session,finishedAt:new Date().toISOString(),...(total?{goalProgress:{met,total}}:{}),exercises});
+  const progressionComplete=!state.session.progressionBlocked&&state.session.exercises.every(e=>{
+    const work=e.sets.filter(isWorking);
+    return work.length>=(e.targetSets??1)&&work.every(s=>s.done);
+  });
+  state.history.push({...state.session,progressionComplete,finishedAt:new Date().toISOString(),...(total?{goalProgress:{met,total}}:{}),exercises});
   state.session=null;state.restEndsAt=null;state.restSetId=null;
 }
 export function moveItem(items,id,direction) {
   const index=items.findIndex(e=>e.id===id), next=index+direction;
   if(index>=0&&next>=0&&next<items.length) [items[index],items[next]]=[items[next],items[index]];
+}
+
+export function workoutTimes(start,end){
+  const a=new Date(start).getTime(),b=new Date(end).getTime();
+  if(!start||!end||!Number.isFinite(a)||!Number.isFinite(b))throw Error('Вкажи початок і завершення тренування.');
+  if(b<=a)throw Error('Завершення має бути пізніше за початок тренування.');
+  return {startedAt:new Date(a).toISOString(),finishedAt:new Date(b).toISOString()};
 }

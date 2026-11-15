@@ -6,7 +6,7 @@ export function filteredHistory(history,days=0,now=Date.now()) {
     const cached=filteredCache.get(history);
     if(cached&&cached.length&&Date.parse(cached.at(-1).finishedAt)<=now&&cached.length===history.length)return cached;
   }
-  const out=history.filter(w=>Date.parse(w.finishedAt)<=now&&(!days||Date.parse(w.finishedAt)>=now-days*86400000)).sort((a,b)=>Date.parse(a.finishedAt)-Date.parse(b.finishedAt));
+  const out=history.filter(w=>Date.parse(w.finishedAt)<=now&&(!days||Date.parse(w.startedAt)>=now-days*86400000)).sort((a,b)=>Date.parse(a.finishedAt)-Date.parse(b.finishedAt));
   if(!days&&Object.isFrozen(history)&&out.length===history.length){Object.freeze(out);filteredCache.set(history,out);}
   return out;
 }
@@ -41,6 +41,6 @@ export function setRecords(history,exerciseId,set,earlier=[]){
 export const localDay=iso=>{const d=new Date(iso);return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');};
 export function monthActivity(history,month=new Date()){
   const year=month.getFullYear(),m=month.getMonth(),days=new Date(year,m+1,0).getDate(),counts=new Map();
-  for(const w of history){const day=localDay(w.finishedAt);counts.set(day,(counts.get(day)||0)+1);}
+  for(const w of history){const day=localDay(w.startedAt);counts.set(day,(counts.get(day)||0)+1);}
   return Array.from({length:days},(_,i)=>{const date=localDay(new Date(year,m,i+1));return {date,day:i+1,count:counts.get(date)||0};});
 }

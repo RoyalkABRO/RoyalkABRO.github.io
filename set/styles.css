@@ -2113,3 +2113,11 @@ body:has(.simple-workout) #app{padding-bottom:0}.simple-workout{padding-bottom:c
 
 #workoutProgress{flex-direction:row}.set-state-icon{font-style:normal}.set-block{scroll-margin-bottom:calc(var(--dock-height,150px) + var(--undo-height,0px) + var(--safe-bottom) + 20px)}
 .confirmation-dialog{padding-bottom:calc(22px + var(--safe-bottom))}
+
+.exercise-config-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
+#rename-form .field { width:100%; }
+#rename-form button[type=submit] { margin-top:12px; }
+.weight-actions { display:flex;justify-content:center;gap:8px;padding:4px 0; }
+.weight-actions[hidden], [data-equipment-panel][hidden] { display:none; }
+.weight-actions .btn { min-width:44px;font-size:1rem; }
+.progression-actions { display:flex;flex-wrap:wrap;gap:8px; }

@@ -10,12 +10,12 @@ export function overallStats(history,allHistory=history){
   let hit=statsCache.get(history);
   if(hit)return hit;
   const working=history.flatMap(w=>w.exercises.flatMap(e=>e.sets.filter(s=>s.done&&s.type!=='warmup')));
-  hit={workouts:history.length,sets:working.length,reps:working.reduce((n,s)=>n+Number(s.reps),0),volume:history.reduce((n,w)=>n+volume(w),0),minutes:Math.round(history.reduce((n,w)=>n+Math.max(0,Date.parse(w.finishedAt)-Date.parse(w.startedAt)),0)/60000),days:new Set(history.map(w=>localDay(w.finishedAt))).size,prs:recordCount(allHistory,history)};
+  hit={workouts:history.length,sets:working.length,reps:working.reduce((n,s)=>n+Number(s.reps),0),volume:history.reduce((n,w)=>n+volume(w),0),minutes:Math.round(history.reduce((n,w)=>n+Math.max(0,Date.parse(w.finishedAt)-Date.parse(w.startedAt)),0)/60000),days:new Set(history.map(w=>localDay(w.startedAt))).size,prs:recordCount(allHistory,history)};
   statsCache.set(history,hit);
   return hit;
  }
  const working=history.flatMap(w=>w.exercises.flatMap(e=>e.sets.filter(s=>s.done&&s.type!=='warmup')));
- return {workouts:history.length,sets:working.length,reps:working.reduce((n,s)=>n+Number(s.reps),0),volume:history.reduce((n,w)=>n+volume(w),0),minutes:Math.round(history.reduce((n,w)=>n+Math.max(0,Date.parse(w.finishedAt)-Date.parse(w.startedAt)),0)/60000),days:new Set(history.map(w=>localDay(w.finishedAt))).size,prs:recordCount(allHistory,history)};
+ return {workouts:history.length,sets:working.length,reps:working.reduce((n,s)=>n+Number(s.reps),0),volume:history.reduce((n,w)=>n+volume(w),0),minutes:Math.round(history.reduce((n,w)=>n+Math.max(0,Date.parse(w.finishedAt)-Date.parse(w.startedAt)),0)/60000),days:new Set(history.map(w=>localDay(w.startedAt))).size,prs:recordCount(allHistory,history)};
 }
 const front={chest:['M61 82 Q74 74 96 88 L96 111 Q75 121 59 103Z','M104 88 Q126 74 139 82 L141 103 Q125 121 104 111Z'],shoulders:['M58 78 Q42 80 41 104 L55 111 63 91Z','M142 78 Q158 80 159 104 L145 111 137 91Z'],biceps:['M41 108 L54 114 51 146 37 149 34 132Z','M159 108 L146 114 149 146 163 149 166 132Z'],core:['M82 121 L96 119 96 166 80 172 74 142Z','M104 119 L118 121 126 142 120 172 104 166Z'],quads:['M68 191 Q80 183 94 192 L91 240 78 261 63 249Z','M106 192 Q120 183 132 191 L137 249 122 261 109 240Z'],calves:['M66 271 L79 274 83 304 75 332 62 331 61 300Z','M121 274 L134 271 139 300 138 331 125 332 117 304Z']};
 const back={shoulders:front.shoulders,back:['M68 81 L96 90 96 174 77 160 62 117Z','M104 90 L132 81 138 117 123 160 104 174Z'],triceps:['M39 109 L54 114 50 149 36 147 33 131Z','M161 109 L146 114 150 149 164 147 167 131Z'],glutes:['M72 170 Q86 165 97 178 L97 204 Q76 218 65 201Z','M103 178 Q114 165 128 170 L135 201 Q124 218 103 204Z'],hamstrings:['M66 211 L94 214 91 249 77 265 63 251Z','M106 214 L134 211 137 251 123 265 109 249Z'],calves:front.calves};

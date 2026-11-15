@@ -1,37 +1,39 @@
 import {getOrCreateExercise,uid} from './model.js';
+import {exerciseConfig,PERSONAL_PLAN_ADDITIONS} from './exercise-config.js';
 
-// Exercise order and rep ranges are transcribed from the supplied three-day plan.
-// Abs have no prescribed rep count; the logger leaves those inputs blank.
+// Keep the existing order and include the two requested positions.
 export const PERSONAL_PROGRAM = [
   {id:'set-program-four-sets-mon',name:'Понеділок',day:1,exercises:[
-    ['Жим лежачи',6,8],
-    ['Підтягування',6,10],
-    ['Жим гантелей над головою (плечі)',8,12],
-    ['Розгинання ніг',10,15],
-    ['Ікри стоячи',8,12],
-    ['Біцепс з грифом',8,12],
-    ['Трицепс вниз на блоці',10,15],
-    ['Прес',null,null]
+    'Жим лежачи',
+    'Підтягування',
+    'Жим гантелей над головою (плечі)',
+    'Розгинання ніг',
+    'Ікри стоячи',
+    PERSONAL_PLAN_ADDITIONS['set-program-four-sets-mon'].name,
+    'Біцепс з грифом',
+    'Трицепс вниз на блоці',
+    'Прес'
   ]},
   {id:'set-program-four-sets-wed',name:'Середа',day:3,exercises:[
-    ['Жим гантелей під кутом',6,10],
-    ['Тяга нижнього блока',6,10],
-    ['Румунська тяга',6,10],
-    ['Згинання ніг',10,15],
-    ['Махи на середню дельту',12,20],
-    ['Біцепс — молотки',8,12],
-    ['Трицепс — розгинання над головою',10,15],
-    ['Прес',null,null]
+    'Жим гантелей під кутом',
+    'Тяга нижнього блока',
+    'Румунська тяга',
+    'Згинання ніг',
+    'Махи на середню дельту',
+    'Біцепс — молотки',
+    'Трицепс — розгинання над головою',
+    'Прес'
   ]},
   {id:'set-program-four-sets-fri',name:'Пʼятниця',day:5,exercises:[
-    ['Жим ногами',8,12],
-    ['Тяга верхнього блока',8,12],
-    ['Butterfly / Pec Deck',10,15],
-    ['Задня дельта в Pec Deck',10,15],
-    ['Ікри сидячи',12,20],
-    ['Біцепс на похилій лавці',10,12],
-    ['Трицепс — розгинання однією рукою',12,15],
-    ['Прес',null,null]
+    'Жим ногами',
+    'Тяга верхнього блока',
+    'Butterfly / Pec Deck',
+    'Задня дельта в Pec Deck',
+    'Ікри сидячи',
+    PERSONAL_PLAN_ADDITIONS['set-program-four-sets-fri'].name,
+    'Біцепс на похилій лавці',
+    'Трицепс — розгинання однією рукою',
+    'Прес'
   ]}
 ];
 export function missingProgramDays(state){return PERSONAL_PROGRAM.filter(day=>!state.templates.some(t=>t.id===day.id));}
@@ -47,10 +49,12 @@ export function addPersonalProgram(state){
   if(state.templates.length+missing.length>500)throw new Error('Забагато планів. Видали зайві перед додаванням.');
   if(onlyStarterPlans(state))state.templates=[];
   for(const day of missing){
-    state.templates.push({id:day.id,name:day.name,day:day.day,exercises:day.exercises.map(([name,min,max])=>({
-      id:uid(),exerciseId:getOrCreateExercise(state,name).id,name,targetSets:4,targetReps:min??8,
-      ...(max!==null?{targetRepsMax:max}:{}),...(min===null?{targetRepsUnspecified:true}:{})
-    }))});
+    state.templates.push({id:day.id,name:day.name,day:day.day,exercises:day.exercises.map(name=>{
+      const exercise=getOrCreateExercise(state,name);
+      const config=exerciseConfig(exercise);
+      return {id:uid(),exerciseId:exercise.id,name:exercise.name,targetSets:4,
+        targetReps:config.min,targetRepsMax:config.max};
+    })});
   }
   return missing.length;
 }

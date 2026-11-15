@@ -13,6 +13,6 @@ export function trendDescription(points,metric='weight'){
 }
 const key=d=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
 export function weekActivity(history,anchor=new Date()){
- const start=new Date(anchor);start.setHours(12,0,0,0);start.setDate(start.getDate()-(start.getDay()+6)%7);const counts=new Map();for(const w of history){const k=key(new Date(w.finishedAt));counts.set(k,(counts.get(k)||0)+1);}
+ const start=new Date(anchor);start.setHours(12,0,0,0);start.setDate(start.getDate()-(start.getDay()+6)%7);const counts=new Map();for(const w of history){const k=key(new Date(w.startedAt));counts.set(k,(counts.get(k)||0)+1);}
  return Array.from({length:7},(_,i)=>{const d=new Date(start);d.setDate(d.getDate()+i);return{date:key(d),day:d.getDate(),label:['Пн','Вт','Ср','Чт','Пт','Сб','Нд'][i],count:counts.get(key(d))||0};});
 }

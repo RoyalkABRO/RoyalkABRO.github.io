@@ -8,10 +8,10 @@ export function dashboard(state,now=new Date()){
  const nowTime=now.getTime(),nowMonth=now.getMonth(),nowYear=now.getFullYear();
  for(const w of state.history){
   const t=Date.parse(w.finishedAt);if(t>nowTime)continue;
-  const dayKey=localDay(w.finishedAt);
+  const dayKey=localDay(w.startedAt);
   counts.set(dayKey,(counts.get(dayKey)||0)+1);
-  weeks.add(localDay(monday(w.finishedAt)));
-  const d=new Date(w.finishedAt);
+  weeks.add(localDay(monday(w.startedAt)));
+  const d=new Date(w.startedAt);
   if(d.getMonth()===nowMonth&&d.getFullYear()===nowYear)month.push(w);
  }
  const days=Array.from({length:7},(_,i)=>{const d=new Date(start);d.setDate(d.getDate()+i);const key=localDay(d);return {key,today:key===localDay(now),count:counts.get(key)||0,planned:state.templates.some(t=>t.exercises.length&&t.day===d.getDay())};});
@@ -46,8 +46,8 @@ export function historyFacts(history){
 }
 export function weekGroups(visible,allHistory=visible,now=new Date()){
  const totals=new Map(),groups=new Map(),prs=recordIndex(allHistory),baselines=priorWeights(allHistory),current=localDay(monday(now)),last=new Date(monday(now));last.setDate(last.getDate()-7);
- for(const w of allHistory){const key=localDay(monday(w.finishedAt));totals.set(key,(totals.get(key)||0)+volume(w));}
- for(const w of newestFirst(visible)){const start=monday(w.finishedAt),key=localDay(start);let group=groups.get(key);if(!group){const previous=new Date(start);previous.setDate(previous.getDate()-7);const end=new Date(start);end.setDate(end.getDate()+6);const total=totals.get(key)||0,prior=totals.get(localDay(previous))||0;group={key,start,end,label:key===current?'Цей тиждень':key===localDay(last)?'Минулий тиждень':'Тиждень',volume:total,delta:prior>0?Math.round((total-prior)/prior*100):null,workouts:[]};groups.set(key,group);}
+ for(const w of allHistory){const key=localDay(monday(w.startedAt));totals.set(key,(totals.get(key)||0)+volume(w));}
+ for(const w of newestFirst(visible)){const start=monday(w.startedAt),key=localDay(start);let group=groups.get(key);if(!group){const previous=new Date(start);previous.setDate(previous.getDate()-7);const end=new Date(start);end.setDate(end.getDate()+6);const total=totals.get(key)||0,prior=totals.get(localDay(previous))||0;group={key,start,end,label:key===current?'Цей тиждень':key===localDay(last)?'Минулий тиждень':'Тиждень',volume:total,delta:prior>0?Math.round((total-prior)/prior*100):null,workouts:[]};groups.set(key,group);}
   const records=prs.get(w.id)||[],top=records.slice().sort((a,b)=>(b.rm||Number(b.set.weight)*Number(b.set.reps))-(a.rm||Number(a.set.weight)*Number(a.set.reps)))[0];
   const best=top||w.exercises.flatMap(e=>workingSets(e).filter(s=>s.done).map(set=>({name:e.name,set,rm:estimated1RM(set)}))).sort((a,b)=>(b.rm||Number(b.set.weight)*Number(b.set.reps))-(a.rm||Number(a.set.weight)*Number(a.set.reps)))[0];
   let deltaWeight=null;

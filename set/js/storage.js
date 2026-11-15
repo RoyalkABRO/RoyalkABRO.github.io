@@ -22,7 +22,10 @@ export class Repository {
     this.db=await new Promise((resolve,reject)=>{req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);req.onblocked=()=>reject(new Error('Закрий інші вікна СЕТ і спробувати ще раз'));});
     this.db.onversionchange=()=>{this.db.close();globalThis.dispatchEvent?.(new Event('set-storage-changed'));};
     const state=await this.read();
-    if(state) return {state,migrated:false};
+    if(state) {
+      if(this.settingsMigration) return {state:await this.write(state),migrated:false};
+      return {state,migrated:false};
+    }
     let raw;try{if(this.legacyError)throw new Error();raw=this.legacy?.getItem(LEGACY_KEY);}catch{throw new Error('Не вдалося прочитати попередні дані. Сховище не змінено.');}
     // The old key is deliberately retained as a recovery copy, even after migration.
     const initial=raw?normalize(JSON.parse(raw)):fresh();
@@ -37,13 +40,14 @@ export class Repository {
     await done;
     if(!meta) return null;
     this.revision=meta.revision;
+    this.settingsMigration=meta.value.exerciseSettingsVersion!==1;
     const ordered=(rows,ids)=>{const byId=new Map(rows.map(row=>[row.id,row]));return ids.map(id=>byId.get(id));};
     const value=normalize({...meta.value,catalog:ordered(catalog,meta.catalogOrder),templates:ordered(templates,meta.templateOrder),history:ordered(history,meta.historyOrder)});
     this.last=snapshot(value);
     return freezeHistory(value);
   }
   async write(value, {sessionOnly=false}={}) {
-    if(sessionOnly&&this.last&&value.history===this.last.history&&value.templates===this.last.templates&&this.last.catalog.every(e=>value.catalog.some(c=>c.id===e.id))){
+    if(sessionOnly&&!this.settingsMigration&&this.last&&value.history===this.last.history&&value.templates===this.last.templates&&this.last.catalog.every(e=>value.catalog.some(c=>c.id===e.id))){
       const next=normalizeMeta(value,this.last);
       const catalogChanged=JSON.stringify(next.catalog)!==JSON.stringify(this.last.catalog);
       const stores=catalogChanged?['meta','catalog']:['meta'];
@@ -79,14 +83,14 @@ export class Repository {
           const before=new Map((this.last?.[key]||[]).map(x=>[x.id,x]));
           const after=new Map(next[key].map(x=>[x.id,x]));
           for(const id of before.keys()) if(!after.has(id))tx.objectStore(store).delete(id);
-          for(const [id,row] of after) if(JSON.stringify(row)!==JSON.stringify(before.get(id)))tx.objectStore(store).put(row);
+          for(const [id,row] of after) if((this.settingsMigration&&key!=='history')||JSON.stringify(row)!==JSON.stringify(before.get(id)))tx.objectStore(store).put(row);
         }
         const {catalog,templates,history,...settings}=next;
         tx.objectStore('meta').put({id:'state',revision:this.revision+1,value:settings,catalogOrder:catalog.map(x=>x.id),templateOrder:templates.map(x=>x.id),historyOrder:history.map(x=>x.id)});
       } catch {tx.abort();}
     };
     try{await done;}catch(error){if(conflict) throw new Error('Дані змінені в іншому вікні. Експортуй незбережене й перезавантаж сторінку.');throw error;}
-    this.revision++;this.last=snapshot(next);
+    this.revision++;this.settingsMigration=false;this.last=snapshot(next);
     return freezeHistory(next);
   }
   async recoveryText() {try{return this.legacy?.getItem(LEGACY_KEY)||'';}catch{return '';}}

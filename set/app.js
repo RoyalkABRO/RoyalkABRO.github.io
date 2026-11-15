@@ -1,22 +1,24 @@
+import {HEALTH_SHORTCUT_NAME,HealthHandoffs,healthShortcutURL,isHealthDevice,healthGuide,healthWorkoutDialog} from './js/apple-health.js';
 import {localDay} from './js/stats.js';
 import {sessionSummary,finishPrompt} from './js/ux30.js';
 import {PushNotifications,classifyPushState} from './js/push-notifications.js';
-import {muscleField} from './js/muscles.js';
+import {equipmentKey, exerciseConfig, stepWeight, trainingSnapshot} from './js/exercise-config.js';
+import {exerciseConfigForm, readExerciseConfig, updateEquipmentFields} from './js/exercise-config-view.js';
 import {exerciseOrderForm,bindExerciseOrder,reorderExercises} from './js/exercise-order.js';
 import {compactTiming,setOptionsForm,finishSectionView,workoutMenuForm,workoutNoteForm,restBarView} from './js/simple-views.js';
 import {focusExercise,upcomingExercise,restDestination,replaceExercise,applyWarmup,warmupSuggestion,forecastSession,optionalSets,restAfterSet} from './js/workout-tools.js';
-import {equipmentFields,replacementForm,warmupForm,warmupRows,extrasForm} from './js/workout-tools-views.js';
+import {replacementForm,warmupForm,warmupRows,extrasForm} from './js/workout-tools-views.js';
 import {restDesign} from './js/design-views.js';
 import {barbellPlates} from './js/dashboard.js';
-import {isWorking,workingSets,suggestGoal,applyGoal,canOfferExtra,setLabel} from './js/progression.js';
+import {isWorking,workingSets,suggestGoal,applyGoal,resolveProgression,canOfferExtra,setLabel} from './js/progression.js';
 import {historyCSV,workoutImage} from './js/exports.js';
 import {WorkoutWakeLock} from './js/wake-lock.js';
 import {Repository} from './js/storage.js';
-import {fresh,normalize,clone,uid,getOrCreateExercise,validSet,startSession,finishSession,moveItem} from './js/model.js';
+import {fresh,normalize,clone,uid,nameKey,getOrCreateExercise,createSessionExercise,validSet,startSession,finishSession,moveItem,workoutTimes} from './js/model.js';
 import {renderView,renderNavigation,renderFocusedExercise,goalForm,shareProgramForm,templateForm,historyDetail,historyEditor,catalogList,esc,button,programPreview,exerciseHistoryForm,muscleGroupsForm,equipmentListForm,planPreview} from './js/views.js';
 import {programText} from './js/share.js';
 import {addPersonalProgram,onlyStarterPlans} from './js/programs.js';
-import {remaining,formatClock,unlockSound,beep} from './js/timer.js';
+import {remaining,formatClock,unlockSound,beep,startRest,stopRest,shiftRest,restartRest} from './js/timer.js';
 import {setupPWA,checkOffline,requestPersistence} from './js/pwa.js';
 import {icon} from './js/icons.js';
 
@@ -25,6 +27,15 @@ const notice=document.getElementById('notice'),noticeText=document.getElementByI
 const navigation=document.getElementById('navigation');
 const undoBar=document.getElementById('undoBar'),workoutProgress=document.getElementById('workoutProgress');
 const repo=new Repository();
+let healthStorage;
+try{healthStorage=window.localStorage;}catch{}
+const healthHandoffs=new HealthHandoffs(healthStorage);
+
+function showHealthWorkout(id){
+  const workout=state.history.find(w=>w.id===id);
+  if(!workout)throw Error('Завершене тренування не знайдено.');
+  openModal(healthWorkoutDialog(workout,healthHandoffs,isHealthDevice()),'health-workout');
+}
 let state,queue=Promise.resolve(),pending=0,failed=false,stale=false,toastHandle,draft=null,draftBaseline='',historyDraft=null,historyBaseline='',modalMode='',timerNotified=null,resultFile=null,resultURL=null;
 const ui={tab:'home',historyDays:0,historyMode:'list',historyDate:null,progressDays:0,progressDetailsOpen:false,metric:'weight',exerciseId:null,offlineStatus:'Перевіряємо офлайн-готовність…',storageStatus:'Сховище на пристрої'};
 const pendingEdits=new Map();
@@ -119,8 +130,9 @@ function updateExerciseCardDOM(){
       const fresh=[...nextRow.querySelectorAll('[data-field]')].find(x=>x.dataset.field===input.dataset.field);
       if(!pendingEdits.has(fieldKey(input))&&!(document.activeElement===input&&input.value.replace(',','.')===fresh.value))input.value=fresh.value;
     }
-    for(const selector of ['.set-num','.previous-set','.done']){
+    for(const selector of ['.set-num','.previous-set','.done','.weight-actions']){
       const target=row.querySelector(selector),fresh=nextRow.querySelector(selector);
+      if(!target||!fresh)continue;
       for(const a of [...target.attributes])if(!fresh.hasAttribute(a.name))target.removeAttribute(a.name);
       for(const a of fresh.attributes)target.setAttribute(a.name,a.value);
       if(target.innerHTML!==fresh.innerHTML)target.innerHTML=fresh.innerHTML;
@@ -229,9 +241,15 @@ function syncHistoryDraft(){
   historyDraft.title=title.value;historyDraft.note=document.querySelector('[data-history-workout-note]')?.value||'';
   for(const x of modalContent.querySelectorAll('[data-history-note-ex]')){const e=historyDraft.exercises.find(e=>e.id===x.dataset.historyNoteEx);if(e)e.note=x.value;}
   for(const x of modalContent.querySelectorAll('[data-history-rir]')){const set=historyDraft.exercises.find(e=>e.id===x.dataset.ex)?.sets.find(s=>s.id===x.dataset.set);if(set)set.rir=x.value===''?null:Number(x.value);}
-  const date=document.getElementById('history-date').value;
-  const oldDate=new Date(Date.parse(historyDraft.startedAt)-new Date(historyDraft.startedAt).getTimezoneOffset()*60000).toISOString().slice(0,16);
-  if(date&&date!==oldDate){const startedAt=new Date(date);if(!Number.isNaN(startedAt.getTime())){const duration=Date.parse(historyDraft.finishedAt)-Date.parse(historyDraft.startedAt);historyDraft.startedAt=startedAt.toISOString();historyDraft.finishedAt=new Date(startedAt.getTime()+duration).toISOString();}}
+  for(const [key,id] of [['startedAt','history-date'],['finishedAt','history-end']]){
+    const input=document.getElementById(id);
+    const timestamp=new Date(input.value);
+    if(Number.isFinite(timestamp.getTime())){
+      const original=state.history.find(w=>w.id===historyDraft.id)?.[key];
+      const local=original&&new Date(Date.parse(original)-new Date(original).getTimezoneOffset()*60000).toISOString().slice(0,16);
+      historyDraft[key]=input.value===local?original:timestamp.toISOString();
+    }
+  }
   for(const input of modalContent.querySelectorAll('[data-set][data-field]')){const set=historyDraft.exercises.find(e=>e.id===input.dataset.ex)?.sets.find(s=>s.id===input.dataset.set);if(set)set[input.dataset.field]=input.value.replace(',','.');}
 }
 function isModalDirty(){
@@ -281,8 +299,8 @@ async function showResultCard(id){
  openModal(button('close-modal','×','aria-label="Закрити"','modal-close')+'<h2>Твоє тренування</h2><img id="result-preview" alt="Картка результату тренування" src="'+resultURL+'"><div class="result-actions">'+button('share-result','Поділитися','','btn')+button('save-result','Завантажити PNG','','btn alt')+'</div><p class="helper" id="result-status" role="status">Картка 1080 × 1920 для сторіз. Особисті нотатки не додаються.</p>','result-card');
 }
 function openExerciseConfig(id){
-  const e=state.catalog.find(e=>e.id===id);if(!e)return;
-  openModal(button('close-modal','×','aria-label="Закрити"','modal-close')+'<h2>Налаштування вправи</h2><p class="scope-badge">Змінюється в каталозі для поточних і майбутніх занять</p><form id="rename-form" data-id="'+esc(id)+'"><label class="filter-label">Назва<input id="exercise-new-name" class="field" maxlength="90" required value="'+esc(e.name)+'"></label><label class="filter-label">Крок ваги, кг<input id="exercise-weight-step" class="field" type="number" inputmode="decimal" min="0.001" max="1000" step="any" placeholder="Наприклад, 2.5" value="'+esc(e.weightStep??'')+'"></label><label class="filter-label">Як записуєш вагу<select id="exercise-weight-basis" class="field"><option value="total" '+(e.weightBasis!=='one-dumbbell'?'selected':'')+'>Загальна вага (штанга / тренажер)</option><option value="one-dumbbell" '+(e.weightBasis==='one-dumbbell'?'selected':'')+'>Вага однієї гантелі</option></select></label>'+equipmentFields(e)+muscleField(e)+'<p class="helper">Для гантелей вводиться вага однієї гантелі в кілограмах (обсяг рахується без подвоєння).</p><button type="submit" class="btn block">Зберегти</button></form>','rename');
+  const e=state.catalog.find(e=>e.id===id);
+  if(e)openModal(exerciseConfigForm(e),'rename');
 }
 
 function showSetFieldError(exId,setId,setObj){
@@ -318,6 +336,28 @@ async function handleAction(b){
   if(action==='session-finish-menu'){openModal(button('close-modal',icon('close'),'aria-label="Закрити"','modal-close')+'<h2>Завершення заняття</h2><div class="btn-column">'+button('finish-workout','Зберегти та завершити','','btn block')+button('cancel-workout','Скасувати заняття','','btn danger block')+button('easy-day',state.session.easy?'Звичайне навантаження':'Сьогодні легше','','btn alt block')+button('review-extras','Переглянути додаткові підходи','','btn alt block')+'</div>','session-finish');return;}
   if(action==='plate-calculator'){const e=sessionExercise(state,id),set=e.sets.find(s=>!s.done)||e.sets.at(-1);openModal(button('close-modal',icon('close'),'aria-label="Закрити"','modal-close')+'<h2>Калькулятор млинців</h2><label class="filter-label">Загальна вага, кг<input id="plateWeight" class="field" type="number" inputmode="decimal" min="0" max="10000" step="any" value="'+esc(set?.weight||20)+'"></label><label class="filter-label">Вага грифа, кг<input id="plateBar" class="field" type="number" inputmode="decimal" min="1" max="100" step="any" value="20"></label><p id="plateResult" data-weight="'+esc(set?.weight||20)+'"></p>','plate-calculator');updatePlates();return;}
   if(action==='workout-home'){await queue;ui.tab='home';render();window.scrollTo(0,0);return;}
+  if(action==='health-workout'){ui.healthWorkoutId=id;showHealthWorkout(id);return;}
+  if(action==='health-setup'){ui.healthWorkoutId=id||null;openModal(healthGuide(healthHandoffs.data.configured),'health-setup');return;}
+  if(action==='health-copy-name'){await navigator.clipboard.writeText(HEALTH_SHORTCUT_NAME);toast('Назву команди скопійовано');return;}
+  if(action==='health-configured'){
+    healthHandoffs.configure();
+    if(ui.healthWorkoutId)showHealthWorkout(ui.healthWorkoutId);else closeModal(true);
+    return;
+  }
+  if(action==='health-launch'||action==='health-confirm'){
+    const workout=state.history.find(w=>w.id===id);
+    if(!workout)throw Error('Завершене тренування не знайдено.');
+    const status=healthHandoffs.status(workout);
+    if(action==='health-confirm'){
+      if(status==='pending')healthHandoffs.mark(workout,'confirmed');
+      showHealthWorkout(id);return;
+    }
+    if(!isHealthDevice()||!healthHandoffs.data.configured)throw Error('Спочатку налаштуй команду на iPhone.');
+    if(status==='confirmed')return;
+    if(['pending','changed'].includes(status)&&!await requestConfirmation({message:'Повторне додавання може створити дублікат у «Здоров’ї».',accept:'Передати ще раз'}))return;
+    const url=healthShortcutURL(workout);
+    healthHandoffs.mark(workout,'pending');showHealthWorkout(id);location.assign(url);return;
+  }
   if(action.startsWith('push-')){if(b.dataset.busy)return;b.dataset.busy='1';b.disabled=true;try{
     if(action==='push-enable'){const code=document.getElementById('pushPairingCode')?.value||'';await pushNotifications.enable(code);const field=document.getElementById('pushPairingCode');if(field)field.value='';await queue;syncPush();}
     if(action==='push-connect'){await pushNotifications.init();syncPush();}
@@ -343,7 +383,7 @@ async function handleAction(b){
     await queue;const record=undoRecord;
     if(!record||record.expires<Date.now()||record.revision!==repo.revision||stale)return clearUndo();
     await commit(s=>{
-      if(record.sessionOnly){s.catalog=clone(record.state.catalog);s.session=clone(record.state.session);s.restEndsAt=record.state.restEndsAt;s.restSetId=record.state.restSetId;s.restKind=record.state.restKind;s.restDuration=record.state.restDuration;}
+      if(record.sessionOnly){s.catalog=clone(record.state.catalog);s.session=clone(record.state.session);s.restEndsAt=record.state.restEndsAt;s.restSetId=record.state.restSetId;s.restKind=record.state.restKind;s.restDuration=record.state.restDuration;s.restBaseSeconds=record.state.restBaseSeconds;}
       else{Object.keys(s).forEach(k=>delete s[k]);Object.assign(s,clone(record.state));}
     },{redraw:false,sessionOnly:record.sessionOnly});
     ui.tab=record.tab;ui.focusId=record.focusId;timerNotified=null;render();return;
@@ -361,6 +401,20 @@ async function handleAction(b){
   if(action==='suggest-warmup'){await queue;openModal(warmupForm(state,sessionExercise(state,id)),'warmup');return;}
   if(action==='recalculate-warmup'){const base=document.getElementById('warmup-base'),step=document.getElementById('warmup-step');if(!base.reportValidity()||!step.reportValidity())return;document.getElementById('warmup-preview').innerHTML=warmupRows(warmupSuggestion(Number(base.value),Number(step.value)));return;}
   if(action==='review-extras'){await queue;openModal(extrasForm(state),'extras');return;}
+  if(action==='weight-step'){
+    await commit(s=>{
+      const e=sessionExercise(s,b.dataset.ex),set=sessionSet(s,b.dataset.ex,b.dataset.set);
+      if(set.done||set.skipped)return;
+      const value=stepWeight(set.weight,exerciseConfig(e),Number(b.dataset.direction));
+      if(value!==null){set.weight=value;delete set.rir;delete e.goal;}
+    },{cardOnly:true,sessionOnly:true});
+    return;
+  }
+  if(action==='progression-accept'||action==='progression-decline'){
+    await commit(s=>resolveProgression(s,sessionExercise(s,id),action==='progression-accept',b.dataset.offer),
+      {sessionOnly:true,undoLabel:action==='progression-accept'?'Ціль прогресії прийнято':'Рекомендацію відхилено'});
+    return;
+  }
   if(action==='accept-goal'){await commit(s=>{const e=sessionExercise(s,id);applyGoal(e,e.goal||suggestGoal(s,e));},{cardOnly:true,sessionOnly:true,undoLabel:'Підставлення цілі'});return;}
   if(action==='edit-goal'){await queue;openModal(goalForm(state,sessionExercise(state,id)),'goal');return;}
   if(action==='set-options'){await queue;openModal(setOptionsForm(sessionExercise(state,id)),'set-options');return;}
@@ -374,15 +428,22 @@ async function handleAction(b){
   if(action==='copy-set'){await commit(s=>{const e=sessionExercise(s,b.dataset.ex),i=e.sets.findIndex(x=>x.id===b.dataset.set);if(i<1)return;const previous=e.sets.slice(0,i).filter(s=>(s.type==='warmup')===(e.sets[i].type==='warmup')).at(-1);if(!previous)return;delete e.sets[i].rir;Object.assign(e.sets[i],{weight:previous.weight,reps:previous.reps,done:false});},{cardOnly:true,sessionOnly:true,undoLabel:"Значення скопійовано"});return;}
   if(action==='dismiss-summary'){delete ui.finishedId;render();window.scrollTo(0,0);return;}
   if(action==='rest-focus'){await queue;openModal(restDesign(state,ui.focusId),'rest-focus');modal.classList.add('rest-dialog');updateTimer();updatePlates();return;}
-  if(action==='rest-continue'){await queue;const {next}=restDestination(state,ui.focusId);await commit(s=>{s.restEndsAt=null;s.restSetId=null;},{redraw:false,sessionOnly:true});if(next)ui.focusId=next.id;closeModal(true);render();return;}
-  if(action==='rest-shift'){await commit(s=>{const now=Date.now(),before=Math.max(0,(s.restEndsAt||now)-now)/1000,seconds=Number(b.dataset.seconds);s.restEndsAt=now+Math.max(0,Math.min(86400,before+seconds))*1000;s.restDuration=Math.min(86400,Math.max(s.restDuration||s.restSeconds,Math.ceil((s.restEndsAt-now)/1000)));timerNotified=null;},{redraw:false,sessionOnly:true});updateTimer();return;}
+  if(action==='rest-continue'){await queue;const {next}=restDestination(state,ui.focusId);await commit(s=>{stopRest(s);},{redraw:false,sessionOnly:true});if(next)ui.focusId=next.id;closeModal(true);render();return;}
+  if(action==='rest-shift'||action==='rest-restart'){
+    await commit(s=>{
+      if(action==='rest-restart')restartRest(s);
+      else shiftRest(s,Number(b.dataset.seconds));
+      timerNotified=null;
+    },{redraw:false,sessionOnly:true});
+    updateTimer();return;
+  }
   if(action==='new-template')return editTemplate();
   if(action==='preview-program'){await queue;openModal(programPreview(state),'program');return;}
   if(action==='add-program'){let added=0;await commit(s=>{added=addPersonalProgram(s);});closeModal(true);if(!added)toast('Готову програму вже додано');return;}
   if(action==='edit-template')return editTemplate(id);
   if(action==='start'){await commit(s=>startSession(s,id),{redraw:false,sessionOnly:false});if(window.scrollY)window.scrollTo(0,0);ui.tab='workout';render();return;}
   if(action==='add-set')return commit(s=>{const e=sessionExercise(s,id);if(e.sets.length>=200)throw new Error('Максимум 200 підходів');const p=workingSets(e).at(-1);if(e.goal&&p&&validSet({...p,done:true},true))e.goal.sets.push({weight:Number(p.weight),reps:Number(p.reps)});else delete e.goal;e.sets.push({id:uid(),weight:p?.weight??'',reps:p?.reps??'',done:false});},{cardOnly:true,sessionOnly:true,undoLabel:"Підхід додано"});
-  if(action==='remove-set'){await queue;const e=state.session?.exercises.find(e=>e.id===id);if(!e||e.sets.length<=1)return toast('Залиш хоча б один підхід');if(e.sets.at(-1).done&&!await requestConfirmation({message:'Видалити виконаний підхід?',accept:'Підтвердити',decline:'Залишити'}))return;return commit(s=>{const e=sessionExercise(s,id);e.sets.pop();if(e.goal)e.goal.sets=e.goal.sets.slice(0,workingSets(e).length);},{cardOnly:true,sessionOnly:true,undoLabel:"Підхід видалено"});}
+  if(action==='remove-set'){await queue;const e=state.session?.exercises.find(e=>e.id===id);if(!e||e.sets.length<=1)return toast('Залиш хоча б один підхід');if(e.sets.at(-1).done&&!await requestConfirmation({message:'Видалити виконаний підхід?',accept:'Підтвердити',decline:'Залишити'}))return;return commit(s=>{const e=sessionExercise(s,id);if(isWorking(e.sets.at(-1))&&workingSets(e).length<=(e.targetSets??1))s.session.progressionBlocked=true;e.sets.pop();if(e.goal)e.goal.sets=e.goal.sets.slice(0,workingSets(e).length);},{cardOnly:true,sessionOnly:true,undoLabel:"Підхід видалено"});}
   if(action==='skip-set'){await commit(s=>{const set=sessionSet(s,b.dataset.ex,b.dataset.set);if(set.done)return;set.skipped=!set.skipped;if(s.restSetId===set.id){s.restEndsAt=null;s.restSetId=null;}},{cardOnly:true,sessionOnly:true,undoLabel:'Позначку пропуску змінено'});return;}
   if(action==='toggle-set'){
     await queue;
@@ -391,17 +452,15 @@ async function handleAction(b){
       showSetFieldError(b.dataset.ex,b.dataset.set,currentSet);
       return;
     }
-    const exercise=sessionExercise(state,b.dataset.ex),finishesExercise=isWorking(currentSet)&&!currentSet.done&&workingSets(exercise).every(s=>s.id===currentSet.id||s.done||s.skipped);
+    const exercise=sessionExercise(state,b.dataset.ex);
     await commit(s=>{
       const set=sessionSet(s,b.dataset.ex,b.dataset.set);
       if(!set.done&&!validSet({...set,done:true,skipped:false},true))throw new Error('Вкажи вагу 0–10000 кг і цілу кількість повторень 1–1000');
       set.done=!set.done;delete set.skipped;
       if(set.done){
         const rest=restAfterSet(s,sessionExercise(s,b.dataset.ex),set);
-        s.restDuration=rest.seconds||s.restSeconds;s.restKind=rest.kind;
-        s.restEndsAt=rest.seconds?Date.now()+rest.seconds*1000:null;
-        s.restSetId=rest.seconds?set.id:null;timerNotified=null;
-      }else if(s.restSetId===set.id){s.restEndsAt=null;s.restSetId=null;timerNotified=null;}
+        startRest(s,rest.seconds,rest.kind,set.id);timerNotified=null;
+      }else if(s.restSetId===set.id){stopRest(s);timerNotified=null;}
     },{cardOnly:true,sessionOnly:true,undoLabel:currentSet.done?'Позначку підходу знято':'Підхід '+setLabel(exercise,exercise.sets.indexOf(currentSet))+' збережено'});
     requestAnimationFrame(()=>requestAnimationFrame(()=>revealCompletedExercise(false)));
     return;
@@ -421,7 +480,7 @@ async function handleAction(b){
     return;
   }
   if(action==='select-exercise'){await queue;if(!state.session?.exercises.some(e=>e.id===id))return;ui.focusId=id;closeModal(true);render();window.scrollTo(0,0);return;}
-  if(action==='remove-session-ex'){if(await requestConfirmation({message:'Прибрати вправу та її підходи з поточного тренування?',accept:'Підтвердити',decline:'Залишити'}))return commit(s=>{s.session.exercises=s.session.exercises.filter(e=>e.id!==id);},{sessionOnly:true,undoLabel:"Вправу прибрано"});return;}
+  if(action==='remove-session-ex'){if(await requestConfirmation({message:'Прибрати вправу та її підходи з поточного тренування?',accept:'Підтвердити',decline:'Залишити'}))return commit(s=>{if(workingSets(sessionExercise(s,id)).some(set=>!set.done))s.session.progressionBlocked=true;s.session.exercises=s.session.exercises.filter(e=>e.id!==id);},{sessionOnly:true,undoLabel:"Вправу прибрано"});return;}
   if(action==='session-add-ex'){openModal(`${button('close-modal','×','aria-label="Закрити"','modal-close')}<h2>Додати вправу</h2><p class="scope-badge">Лише для сьогоднішнього заняття</p><form id="session-ex-form"><div class="labels"><label for="session-ex-name">Назва вправи</label><input id="session-ex-name" class="field" maxlength="90" required list="exercise-names" autofocus></div>${catalogList(state)}<button class="btn block" type="submit">Додати до тренування</button></form>`,'session-ex');return;}
   if(action==='finish-workout'){
     await queue;if(!state.session)return;if(modal.open)closeModal(true);
@@ -435,10 +494,20 @@ async function handleAction(b){
     await queue;if(!state.session)return;if(modal.open)closeModal(true);const sessionId=state.session.id;
     if(!await requestConfirmation({title:'Скасувати це заняття?',message:'Поточні результати не потраплять в історію. Збережені тренування та основна програма залишаться. Після скасування буде доступна дія «Скасувати дію».',accept:'Так, скасувати заняття',decline:'Продовжити тренування',danger:true}))return;
     await queue;if(state.session?.id!==sessionId)return;
-    await commit(s=>{s.session=null;s.restEndsAt=null;s.restSetId=null;},{redraw:false,sessionOnly:true,undoLabel:'Заняття скасовано'});ui.tab='home';render();window.scrollTo(0,0);return;
+    await commit(s=>{s.session=null;stopRest(s);},{redraw:false,sessionOnly:true,undoLabel:'Заняття скасовано'});ui.tab='home';render();window.scrollTo(0,0);return;
   }
-  if(action==='rest-start'||action==='rest-adjust')return commit(s=>{if(!s.session)return;s.restEndsAt=action==='rest-adjust'?Math.max(Date.now(),s.restEndsAt||Date.now())+30000:Date.now()+s.restSeconds*1000;s.restDuration=Math.min(86400,Math.max(action==='rest-start'?s.restSeconds:(s.restDuration||s.restSeconds),Math.ceil((s.restEndsAt-Date.now())/1000)));timerNotified=null;},{redraw:false,sessionOnly:true}).then(updateTimer);
-  if(action==='rest-stop')return commit(s=>{s.restEndsAt=null;timerNotified=null;},{redraw:false,sessionOnly:true}).then(()=>{if(modalMode==='rest-focus')closeModal(true);updateTimer();});
+  if(action==='rest-start'||action==='rest-stop'){
+    await commit(s=>{
+      if(action==='rest-stop')stopRest(s);
+      else if(s.session){
+        const e=focusExercise(s.session,ui.focusId);
+        startRest(s,e?exerciseConfig(e).restSeconds:s.restSeconds);
+      }
+      timerNotified=null;
+    },{redraw:false,sessionOnly:true});
+    if(modalMode==='rest-focus'&&action==='rest-stop')closeModal(true);
+    updateTimer();return;
+  }
   if(action==='export')return exportBackup();
   if(action==='share-program'){await queue;openModal(shareProgramForm(state),'share-program');return;}
   if(action==='share-text')return shareProgramText();
@@ -447,7 +516,7 @@ async function handleAction(b){
   if(action==='import')return document.getElementById('backup-file').click();
   if(action==='reset'){if(await requestConfirmation({message:'Очистити всі поточні плани та історію? Перед очищенням завантажиться резервна копія.',accept:'Підтвердити',decline:'Залишити'})){await queue;backup(state,'set-before-reset');await commit(s=>{Object.assign(s,fresh());},{redraw:false});ui.tab='home';render();}return;}
   if(action==='close-modal')return closeModal();
-  if(action==='draft-add'){syncDraft();const name=draft.addName.trim();if(!name)return toast('Введи назву вправи');if(draft.exercises.length>=200)return toast('Максимум 200 вправ');draft.exercises.push({id:uid(),exerciseId:null,name,targetSets:4,targetReps:8});draft.addName='';displayDraft();return;}
+  if(action==='draft-add'){syncDraft();const name=draft.addName.trim();if(!name)return toast('Введи назву вправи');if(draft.exercises.length>=200)return toast('Максимум 200 вправ');const config=exerciseConfig(state.catalog.find(e=>e.name===name)||{name});draft.exercises.push({id:uid(),exerciseId:null,name,targetSets:4,targetReps:config.min,targetRepsMax:config.max});draft.addName='';displayDraft();return;}
   if(action==='draft-remove'){syncDraft();draft.exercises=draft.exercises.filter(e=>e.id!==id);displayDraft();return;}
   if(action==='draft-move'){syncDraft();moveItem(draft.exercises,id,Number(b.dataset.direction));displayDraft();return;}
   if(action==='delete-template'){if(await requestConfirmation({message:'Видалити план? Історія тренувань залишиться.',accept:'Підтвердити',decline:'Залишити'})){await commit(s=>{s.templates=s.templates.filter(t=>t.id!==draft.id);},{undoLabel:"План видалено"});closeModal(true);}return;}
@@ -497,7 +566,7 @@ app.addEventListener('input',event=>{
   btn?.classList.remove('yes');
   btn?.setAttribute('aria-pressed','false');
   btn?.setAttribute('aria-label',btn.getAttribute('aria-label')?.replace(': виконано',': позначити виконаним')||'Позначити виконаним');
-  commit(s=>{const target=sessionSet(s,ex,set);target[field]=value;target.done=false;delete target.skipped;delete target.rir;},{redraw:false,preserve:true,sessionOnly:true}).then(()=>{
+  commit(s=>{const target=sessionSet(s,ex,set);target[field]=value;target.done=false;if(s.restSetId===target.id)stopRest(s);delete target.skipped;delete target.rir;},{redraw:false,preserve:true,sessionOnly:true}).then(()=>{
     if(pendingEdits.get(key)===edit)pendingEdits.delete(key);
     if(ui.tab==='workout')updateExerciseCardDOM();
   }).catch(()=>{});
@@ -506,10 +575,8 @@ app.addEventListener('input',event=>{
 app.addEventListener('change',event=>{
   const x=event.target;
   if(x.matches('[data-rir]')){const value=x.value;commit(s=>{sessionSet(s,x.dataset.ex,x.dataset.set).rir=value===''?null:Number(value);},{cardOnly:true,sessionOnly:true}).catch(()=>{});}
-  if(x.id==='exercise-rest-duration')commit(s=>{s.exerciseRestSeconds=Number(x.value);},{redraw:false,sessionOnly:true}).catch(()=>{});
   if(x.id==='warmup-rest-duration')commit(s=>{s.warmupRestSeconds=Number(x.value);},{redraw:false,sessionOnly:true}).catch(()=>{});
   if(x.id==='keep-awake')commit(s=>{s.keepAwake=x.checked;},{redraw:false,sessionOnly:true}).then(syncWakeLock).catch(()=>{});
-  if(x.id==='rest-duration')commit(s=>{s.restSeconds=Number(x.value);},{redraw:false,sessionOnly:true}).catch(()=>{});
   if(x.id==='progress-ex'){ui.exerciseId=x.value;render();}
   if(x.id==='progress-period'){ui.progressDays=Number(x.value);render();}
   if(x.id==='history-period'){ui.historyDays=Number(x.value);ui.historyDate=null;ui.historyLimit=50;render();}
@@ -522,7 +589,14 @@ app.addEventListener('toggle',event=>{
 },true);
 
 modal.addEventListener('cancel',event=>{event.preventDefault();closeModal();});
-modal.addEventListener('change',event=>{if(event.target.id==='share-plan'){document.getElementById('share-text').value=programText(state.templates,event.target.value);document.getElementById('share-status').textContent='';}});
+modal.addEventListener('input',event=>{
+  const field=event.target;
+  if(field.name==='bands'&&field.form?.id==='rename-form')updateEquipmentFields(field.form,field.name);
+});
+modal.addEventListener('change',event=>{
+  const field=event.target;
+  if(field.name==='equipmentType'&&field.form?.id==='rename-form')updateEquipmentFields(field.form,field.name);
+if(event.target.id==='share-plan'){document.getElementById('share-text').value=programText(state.templates,event.target.value);document.getElementById('share-status').textContent='';}});
 modal.addEventListener('click',event=>{if(event.target===modal){const r=modal.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)closeModal();}});
 modal.addEventListener('submit',event=>{event.preventDefault();const form=event.target;(async()=>{
   if(form.id==='replacement-form'){const name=document.getElementById('replacement-name').value,reps=Number(document.getElementById('replacement-reps').value);let focusId;await commit(s=>{focusId=replaceExercise(s,form.dataset.id,name,reps);},{redraw:false,sessionOnly:true,undoLabel:'Вправу замінено на сьогодні'});ui.focusId=focusId;closeModal(true);render();}
@@ -530,9 +604,68 @@ modal.addEventListener('submit',event=>{event.preventDefault();const form=event.
   if(form.id==='extras-form'){const rows=[...form.querySelectorAll('[data-extra-ex]:checked')].map(x=>({ex:x.dataset.extraEx,id:x.value}));if(!rows.length)return;await commit(s=>{const allowed=optionalSets(s.session);for(const row of rows){if(!allowed.some(x=>x.exerciseId===row.ex&&x.setId===row.id))throw Error('Список підходів змінився. Відкрий його ще раз.');const e=sessionExercise(s,row.ex),index=workingSets(e).findIndex(x=>x.id===row.id);e.sets=e.sets.filter(x=>x.id!==row.id);if(e.goal)e.goal.sets.splice(index,1);}},{cardOnly:true,sessionOnly:true,undoLabel:'Додаткові підходи прибрано'});closeModal(true);}
   if(form.id==='goal-form'){const sets=[...form.querySelectorAll('.goal-input-row')].map(row=>({weight:Number(row.querySelector('[data-goal-weight]').value),reps:Number(row.querySelector('[data-goal-reps]').value)}));await commit(s=>applyGoal(sessionExercise(s,form.dataset.id),{sets,mode:'manual',reason:'Власна ціль на це заняття.'}),{cardOnly:true,sessionOnly:true});closeModal(true);}
   if(form.id==='template-form'){syncDraft();const saved=clone(draft);await commit(s=>{const replaceStarters=saved.isNew&&onlyStarterPlans(s);const exercises=saved.exercises.map(e=>({...e,exerciseId:e.exerciseId||getOrCreateExercise(s,e.name).id}));const t={id:saved.id,name:saved.name.trim(),day:saved.day,exercises};const index=s.templates.findIndex(x=>x.id===t.id);if(index<0){if(replaceStarters)s.templates=[];s.templates.push(t);}else s.templates[index]=t;});closeModal(true);}
-  if(form.id==='session-ex-form'){const name=document.getElementById('session-ex-name').value;let addedId=null;await commit(s=>{if(s.session.exercises.length>=200)throw new Error('Максимум 200 вправ');const exercise=getOrCreateExercise(s,name);addedId=uid();s.session.exercises.push({id:addedId,exerciseId:exercise.id,name:exercise.name,...(exercise.note!==undefined?{note:exercise.note}:{}),targetSets:4,...(exercise.weightStep?{weightStep:exercise.weightStep}:{}),...(exercise.weightBasis?{weightBasis:exercise.weightBasis}:{}),...(exercise.equipment?{equipment:clone(exercise.equipment)}:{}),sets:Array.from({length:4},()=>({id:uid(),weight:'',reps:'',done:false}))});},{redraw:false,sessionOnly:true});if(addedId)ui.focusId=addedId;closeModal(true);render();}
-  if(form.id==='history-form'){syncHistoryDraft();const saved=clone(historyDraft);await commit(s=>{const index=s.history.findIndex(w=>w.id===saved.id);s.history[index]=saved;});closeModal(true);}
-  if(form.id==='rename-form'){const name=document.getElementById('exercise-new-name').value.trim().replace(/\s+/g,' '),id=form.dataset.id;await commit(s=>{const existing=getOrCreateExercise(clone(s),name);if(existing.id!==id&&s.catalog.some(e=>e.id===existing.id))throw new Error('Вправа з такою назвою вже є. Обери іншу назву.');const catalog=s.catalog.find(e=>e.id===id);catalog.name=name;const oldStep=catalog.weightStep,oldBasis=catalog.weightBasis;const muscle=document.getElementById('exercise-muscle').value;if(muscle)catalog.muscleGroup=muscle;else delete catalog.muscleGroup;catalog.equipment=Object.fromEntries([...form.querySelectorAll('[data-equipment]')].map(x=>[x.dataset.equipment,x.value.trim()]).filter(([,v])=>v));const step=document.getElementById('exercise-weight-step').value;if(step==='')delete catalog.weightStep;else catalog.weightStep=Number(step);catalog.weightBasis=document.getElementById('exercise-weight-basis').value;for(const e of s.session?.exercises||[])if(e.exerciseId===id){e.name=name;e.equipment=clone(catalog.equipment);e.weightBasis=catalog.weightBasis;if(catalog.weightStep)e.weightStep=catalog.weightStep;else delete e.weightStep;if(oldStep!==catalog.weightStep||oldBasis!==catalog.weightBasis)delete e.goal;}for(const t of s.templates)for(const e of t.exercises)if(e.exerciseId===id)e.name=name;});closeModal(true);}
+  if(form.id==='session-ex-form'){
+    const name=document.getElementById('session-ex-name').value;
+    let addedId;
+    await commit(s=>{
+      if(s.session.exercises.length>=200)throw Error('Максимум 200 вправ');
+      const e=createSessionExercise(s,getOrCreateExercise(s,name),4);
+      addedId=e.id;s.session.exercises.push(e);
+    },{redraw:false,sessionOnly:true});
+    ui.focusId=addedId;closeModal(true);render();
+  }
+  if(form.id==='history-form'){
+    syncHistoryDraft();
+    workoutTimes(historyDraft.startedAt,historyDraft.finishedAt);
+    const saved=clone(historyDraft);
+    await commit(s=>{
+      const index=s.history.findIndex(w=>w.id===saved.id);
+      const original=s.history[index];
+      if(saved.progressionComplete&&original.exercises.some(e=>{
+        const current=saved.exercises.find(row=>row.id===e.id);
+        return !current||workingSets(current).length<workingSets(e).length;
+      }))saved.progressionComplete=false;
+      s.history[index]=saved;
+    });
+    closeModal(true);
+  }
+  if(form.id==='rename-form'){
+    const f=form.elements,id=form.dataset.id;
+    const name=f.exerciseName.value.trim().replace(/\s+/g,' ');
+    const training=readExerciseConfig(form),weightBasis=f.weightBasis.value;
+    const muscle=document.getElementById('exercise-muscle').value;
+    const equipment=Object.fromEntries([...form.querySelectorAll('[data-equipment]')]
+      .map(x=>[x.dataset.equipment,x.value.trim()]).filter(([,value])=>value));
+    await commit(s=>{
+      if(!name)throw Error('Вкажи назву вправи.');
+      const conflict=s.catalog.some(e=>e.id!==id&&nameKey(e.name)===nameKey(name));
+      if(conflict)throw Error('Вправа з такою назвою вже є. Обери іншу назву.');
+      const catalog=s.catalog.find(e=>e.id===id);
+      const settings={name,training,weightBasis,equipment};
+      Object.assign(catalog,settings);
+      if(muscle)catalog.muscleGroup=muscle;else delete catalog.muscleGroup;
+      const updateRange=e=>{
+        e.name=name;e.targetReps=training.min;e.targetRepsMax=training.max;
+        delete e.targetRepsUnspecified;
+      };
+      for(const e of s.session?.exercises||[]){
+        if(e.exerciseId!==id)continue;
+        if(e.sets.some(set=>set.done)&&equipmentKey(e)!==equipmentKey(settings)){
+          // The logged sets already belong to this setup; the equipment change starts next time.
+          e.training={...trainingSnapshot(e).training,restSeconds:training.restSeconds,
+            min:training.min,max:training.max,progression:training.progression,useRir:training.useRir};
+        }else {
+          if(equipmentKey(e)!==equipmentKey(settings)&&exerciseConfig(e).equipmentType==='pullup'&&training.equipmentType==='pullup'){
+            for(const set of workingSets(e))if(!set.done)set.weight=0;
+          }
+          Object.assign(e,structuredClone(settings));
+        }
+        updateRange(e);delete e.goal;
+      }
+      for(const t of s.templates)for(const e of t.exercises)if(e.exerciseId===id)updateRange(e);
+    });
+    closeModal(true);toast('Налаштування вправи збережено');
+  }
 })().catch(showError);});
 
 function updatePlates(){const result=document.getElementById('plateResult'),bar=document.getElementById('plateBar');if(!result||!bar)return;const weight=result.dataset.weight===''?NaN:Number(result.dataset.weight),p=barbellPlates(weight,Number(bar.value));result.textContent=!p?'Вкажи вагу підходу не меншу за вагу грифа.':p.plates.length?p.plates.map(n=>n.toLocaleString('uk-UA')).join(' + ')+' кг на бік'+(p.remainder?' · залишок '+p.remainder.toLocaleString('uk-UA')+' кг загалом':''):'Без дисків'+(p.remainder?' · залишок '+p.remainder.toLocaleString('uk-UA')+' кг загалом':'');}
@@ -544,7 +677,11 @@ function updateTimer(){
   const compact=document.getElementById('restCompact'),idleBar=document.getElementById('restIdleBar'),slot=document.getElementById('restSlot');
   const hasRest=Boolean(state.restEndsAt);
   if(compact)compact.hidden=!hasRest;
-  if(idleBar)idleBar.hidden=hasRest;
+  if(idleBar){
+    idleBar.hidden=hasRest;
+    const duration=idleBar.querySelector('strong'),active=focusExercise(state.session,ui.focusId);
+    if(duration)duration.textContent=formatClock(active?exerciseConfig(active).restSeconds:state.restSeconds);
+  }
   if(slot){slot.classList.toggle('is-active',hasRest);slot.classList.toggle('is-idle',!hasRest);}
   const hud=document.getElementById('restHudTimer');
   if(hud){
