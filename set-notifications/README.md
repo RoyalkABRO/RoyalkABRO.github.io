@@ -20,3 +20,9 @@ Cloudflare Worker with one SQLite Durable Object. Durable alarms wake the schedu
 Run npm test inside this directory. Tests cover real SQLite persistence and service scheduling/authentication. Cloudflare build/runtime, a real push subscription, and locked-screen phone delivery still require deployment verification; unit tests do not establish these.
 
 The worker uses web-push for VAPID and encrypted request creation, then native fetch for delivery. It never logs secrets or subscriptions. A timer update replaces the older deadline; cancellation advances the sequence, so a delayed request cannot resurrect it. Transient delivery failures retry briefly; stale timers expire after 60 seconds. Internet and OS notification permissions are required, and delivery time/sound remains subject to network and phone settings.
+
+## Calendar recap alerts
+
+The authenticated `POST /v1/recap` route accepts a sequence and two deadline entries (week then month). A null period ID and deadline cancel that kind. The server validates Kyiv calendar boundaries, keeps recap jobs separate from rest timers, and exposes support as `recapScheduling: true` in `GET /v1/config`. The SQLite table is created on startup using the existing Durable Object. Existing subscriptions and VAPID keys are reused. No new secrets or bindings are required.
+
+Verify that deploy succeeded and that the configured worker's `/v1/config` advertises recap scheduling before enabling the switch on the installed iPhone PWA. With a workout in the current calendar period, opt in while online before the next boundary, then check delivery with the app closed. Encrypted delivery, permissions, and real Apple device behavior are separate from server scheduling tests.

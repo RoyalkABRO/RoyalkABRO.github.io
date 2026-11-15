@@ -1,7 +1,7 @@
 /* Keep CACHE and ASSETS aligned with js/pwa.js. Each release gets a new cache. */
-const CACHE='set-pwa-v3-20261114-31';
+const CACHE='set-pwa-v3-20261115-32';
 const PREFIX='set-pwa-';
-const ASSETS=['./','./index.html','./styles.css','./app.js','./js/model.js','./js/apple-health.js','./js/exercise-config.js','./js/exercise-config-view.js','./js/ux30.js','./js/storage.js','./js/stats.js','./js/history-index.js','./js/timer.js','./js/views.js','./js/pwa.js','./js/programs.js','./js/share.js','./js/icons.js','./js/exports.js','./js/wake-lock.js','./js/progression.js','./js/dashboard.js','./js/design-views.js','./js/workout-tools.js','./js/workout-tools-views.js','./js/simple-views.js','./js/exercise-order.js','./js/muscles.js','./js/progress-overview.js','./js/push-notifications.js','./js/notification-config.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
+const ASSETS=['./','./index.html','./styles.css','./recap.css','./js/recap.js','./js/recap-view.js','./js/recap-notices.js','./app.js','./js/model.js','./js/apple-health.js','./js/exercise-config.js','./js/exercise-config-view.js','./js/ux30.js','./js/storage.js','./js/stats.js','./js/history-index.js','./js/timer.js','./js/views.js','./js/pwa.js','./js/programs.js','./js/share.js','./js/icons.js','./js/exports.js','./js/wake-lock.js','./js/progression.js','./js/dashboard.js','./js/design-views.js','./js/workout-tools.js','./js/workout-tools-views.js','./js/simple-views.js','./js/exercise-order.js','./js/muscles.js','./js/progress-overview.js','./js/push-notifications.js','./js/notification-config.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
   const cache=await caches.open(CACHE);
   const assets=await Promise.all(ASSETS.map(async path=>{
@@ -75,5 +75,35 @@ self.addEventListener('fetch',event=>{
 });
 
 // Push delivery is handled by the OS even without an open application window.
-self.addEventListener('push',event=>{let data={};try{data=event.data?.json()||{};}catch{}const test=data.type==='test',expired=!test&&Number.isFinite(data.expiresAt)&&data.expiresAt<Date.now();const title=test?'СЕТ · Тестове сповіщення':expired?'СЕТ · Пропущений таймер':'СЕТ · Відпочинок завершено';event.waitUntil(self.registration.showNotification(title,{body:test?'Сповіщення на цьому пристрої працюють.':expired?'Відкрий СЕТ, щоб продовжити тренування.':String(data.body||'Час наступного підходу.').slice(0,160),tag:'set-rest',icon:new URL('./icon-192.png',self.registration.scope).href,badge:new URL('./icon-192.png',self.registration.scope).href,renotify:!expired,...(expired?{silent:true}:{}),data:{type:test?'test':'rest-complete'}}));});
-self.addEventListener('notificationclick',event=>{event.notification.close();event.waitUntil((async()=>{const url=new URL('./',self.registration.scope),windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});for(const client of windows){const candidate=new URL(client.url);if(candidate.origin===url.origin&&candidate.pathname.startsWith(url.pathname)){await client.focus();return;}}await self.clients.openWindow(url.href);})());});
+const recapId=value=>typeof value==='string'&&/^(week|month):\d{4}-\d{2}-\d{2}$/.test(value);
+self.addEventListener('push',event=>{let data={};try{data=event.data?.json()||{};}catch{}
+ if(data.type==='recap'){
+  if(recapId(data.id)&&Number.isFinite(data.expiresAt)&&data.expiresAt>Date.now()){
+   const month=data.id.startsWith('month:');
+   event.waitUntil(self.registration.showNotification(month?'СЕТ · Місячний RECAP':'СЕТ · Тижневий RECAP',{
+    body:month?'🏆 Твій місячний RECAP готовий. Час побачити результати!':
+     '🏋️ Твій тиждень у СЕТ завершено! Подивимось, наскільки ти став сильнішим?',
+    tag:'set-recap-'+data.id,icon:new URL('./icon-192.png',self.registration.scope).href,
+    data:{type:'recap',id:data.id}
+   }));
+  }
+  return;
+ }
+ const test=data.type==='test',expired=!test&&Number.isFinite(data.expiresAt)&&data.expiresAt<Date.now();const title=test?'СЕТ · Тестове сповіщення':expired?'СЕТ · Пропущений таймер':'СЕТ · Відпочинок завершено';event.waitUntil(self.registration.showNotification(title,{body:test?'Сповіщення на цьому пристрої працюють.':expired?'Відкрий СЕТ, щоб продовжити тренування.':String(data.body||'Час наступного підходу.').slice(0,160),tag:'set-rest',icon:new URL('./icon-192.png',self.registration.scope).href,badge:new URL('./icon-192.png',self.registration.scope).href,renotify:!expired,...(expired?{silent:true}:{}),data:{type:test?'test':'rest-complete'}}));});
+self.addEventListener('notificationclick',event=>{
+ const data=event.notification.data;
+ event.notification.close();
+ event.waitUntil((async()=>{
+  const url=new URL('./',self.registration.scope);
+  const recap=data?.type==='recap'&&recapId(data.id)?data.id:null;
+  if(recap)url.searchParams.set('recap',recap);
+  const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+  for(const client of windows){
+   const candidate=new URL(client.url);
+   if(candidate.origin!==url.origin||!candidate.pathname.startsWith(url.pathname))continue;
+   if(recap)client.postMessage({type:'OPEN_RECAP',id:recap});
+   await client.focus();return;
+  }
+  await self.clients.openWindow(url.href);
+ })());
+});

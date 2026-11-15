@@ -118,7 +118,8 @@ export function equipmentKey(e) {
   const c = exerciseConfig(e);
   return JSON.stringify([c.equipmentType,c.weightBasis,c.increment,
     c.equipmentType === 'dumbbell' ? c.weights : null,c.equipmentType === 'pullup' ? c.band : null,
-    ['seat','bench','pin','grip'].map(key => e.equipment?.[key] || '')]);
+    ['seat','bench','pin','grip'].map(key => e.equipment?.[key] || ''),
+    ...(e.equipment?.station?[e.equipment.station]:[])]);
 }
 
 export function stepWeight(value, config, direction) {

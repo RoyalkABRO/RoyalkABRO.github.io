@@ -24,3 +24,48 @@ test('disable revokes token and removes pending alarm',async t=>{const f=fixture
 test('test signal is rate limited',async t=>{const f=fixture(t);assert.equal((await f.request('/v1/test')).status,200);assert.equal((await f.request('/v1/test')).status,429);f.advance(10000);assert.equal((await f.request('/v1/test')).status,200);});
 test('SQLite restart preserves keys, credentials and deadlines',()=>{const dir=mkdtempSync(join(tmpdir(),'set-push-'));try{const file=join(dir,'push.sqlite');let db=new DatabaseSync(file),store=new PushStore(sqlAdapter(db));const keys=store.getKeys(()=>({publicKey:'persisted-public',privateKey:'persisted-private'})),device=store.enroll(subscription);store.updateTimer(store.authenticate(device.token),3,123456,'exercise');db.close();db=new DatabaseSync(file);store=new PushStore(sqlAdapter(db));assert.deepEqual(store.getKeys(()=>{throw Error('must not regenerate');}),keys);assert.equal(store.authenticate(device.token).sequence,3);assert.equal(store.nextAlarm(),123456);db.close();}finally{rmSync(dir,{recursive:true,force:true});}});
 test('invalid deadlines and sequences are rejected',async t=>{const f=fixture(t);for(const data of [{sequence:0,endsAt:101000,kind:'set'},{sequence:1,endsAt:1,kind:'set'},{sequence:1,endsAt:999999999,kind:'set'},{sequence:1,endsAt:101000,kind:'unknown'}])assert.equal((await f.request('/v1/timer',data)).status,400);assert.equal(f.store.nextAlarm(),null);});
+
+const recapNow=Date.parse('2026-11-29T19:00:00Z');
+const recapWeek={kind:'week',id:'week:2026-11-23',endsAt:Date.parse('2026-11-29T22:00:00Z')};
+const recapMonth={kind:'month',id:'month:2026-11-01',endsAt:Date.parse('2026-11-30T22:00:00Z')};
+const recapOff=[{kind:'week',id:null,endsAt:null},{kind:'month',id:null,endsAt:null}];
+test('weekly/monthly RECAP coexist with an independent rest alarm, sending only the period ID',async t=>{
+ const sent=[],f=fixture(t,{send:async(_subscription,payload)=>sent.push(payload)});
+ f.advance(recapNow-f.time());
+ assert.equal((await f.request('/v1/recap',{sequence:1,periods:[recapWeek,recapMonth]})).status,200);
+ assert.equal(f.store.nextAlarm(),recapWeek.endsAt);
+ await f.request('/v1/timer',{sequence:1,endsAt:f.time()+30000,kind:'set'});
+ f.advance(30000);await f.service.processDue();
+ assert.equal(sent[0].type,'rest-complete');
+ assert.equal(f.store.nextAlarm(),recapWeek.endsAt);
+ f.advance(recapWeek.endsAt-f.time());await f.service.processDue();await f.service.processDue();
+ assert.equal(sent.filter(s=>s.id===recapWeek.id).length,1);
+ assert.deepEqual(Object.keys(sent[1]).sort(),['expiresAt','id','type']);
+ assert.equal(f.store.nextAlarm(),recapMonth.endsAt);
+ f.advance(recapMonth.endsAt-f.time());await f.service.processDue();
+ assert.equal(sent[2].id,recapMonth.id);
+ assert.equal(f.store.nextAlarm(),null);
+});
+test('recap schedule validates authentic Kyiv boundaries and cancels safely across reordered requests',async t=>{
+ const f=fixture(t);
+ f.advance(recapNow-f.time());
+ assert.equal((await f.request('/v1/recap',{sequence:1,periods:[recapWeek,recapMonth]},'wrong')).status,401);
+ assert.equal((await f.request('/v1/recap',{sequence:1,periods:[{...recapWeek,endsAt:recapWeek.endsAt-1},recapMonth]})).status,400);
+ assert.equal((await f.request('/v1/recap',{sequence:2,periods:recapOff})).status,200);
+ assert.equal((await (await f.request('/v1/recap',{sequence:1,periods:[recapWeek,recapMonth]})).json()).accepted,false);
+ assert.equal(f.store.nextAlarm(),null);
+});
+test('recap push retries and consumes a period once, revocation clears future periods',async t=>{
+ let attempts=0;
+ const f=fixture(t,{send:async()=>{if(++attempts===1)throw Error('retry');}});
+ f.advance(recapNow-f.time());
+ await f.request('/v1/recap',{sequence:1,periods:[recapWeek,recapMonth]});
+ f.advance(recapWeek.endsAt-f.time());
+ await f.service.processDue();
+ assert.equal(f.store.nextAlarm(),f.time()+60000);
+ f.advance(60000);await f.service.processDue();await f.service.processDue();
+ assert.equal(attempts,2);
+ assert.equal(f.store.nextAlarm(),recapMonth.endsAt);
+ await f.request('/v1/device',null,f.device.token,origin,'DELETE');
+ assert.equal(f.store.nextAlarm(),null);
+});

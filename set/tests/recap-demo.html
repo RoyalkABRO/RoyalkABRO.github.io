@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+ <title>Демо СЕТ RECAP</title>
+ <link rel="stylesheet" href="../styles.css">
+ <link rel="stylesheet" href="../recap.css">
+</head>
+<body>
+<main class="shell">
+ <h1>Демо СЕТ RECAP</h1>
+ <p id="status">Доступно тільки на localhost.</p>
+ <div class="btn-column" id="scenarios"></div>
+</main>
+<script type="module">
+ if(['localhost','127.0.0.1','[::1]'].includes(location.hostname)){
+   const [{demoData,TODAY},{buildRecap,periodFor},{showRecap}]=await Promise.all([
+     import('./recap-fixtures.mjs'),import('../js/recap.js'),import('../js/recap-view.js')
+   ]);
+   document.getElementById('status').textContent='Синтетичний журнал у пам’яті. Жодного запису в сховище СЕТ.';
+   for(const [id,label] of [['up','Високий прогрес'],['stable','Стабільність'],['down','Спад'],['insufficient','Недостатньо даних'],['records','Нові рекорди'],['empty','Порожній період']]){
+     const button=document.createElement('button');
+     button.className='btn alt';button.textContent=label;
+     button.onclick=()=>showRecap(buildRecap(demoData(id),periodFor('week','2026-11-16'),TODAY),{demo:true});
+     document.getElementById('scenarios').append(button);
+   }
+ }
+</script>
+</body>
+</html>

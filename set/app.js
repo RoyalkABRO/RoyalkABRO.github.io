@@ -1,3 +1,6 @@
+import {kyivDay} from './js/recap.js';
+import {recapPreferences,saveRecapPreferences,recapDeadlines} from './js/recap-notices.js';
+import {reportFromId,showRecap} from './js/recap-view.js';
 import {HEALTH_SHORTCUT_NAME,HealthHandoffs,healthShortcutURL,isHealthDevice,healthGuide,healthWorkoutDialog} from './js/apple-health.js';
 import {localDay} from './js/stats.js';
 import {sessionSummary,finishPrompt} from './js/ux30.js';
@@ -41,8 +44,55 @@ const ui={tab:'home',historyDays:0,historyMode:'list',historyDate:null,progressD
 const pendingEdits=new Map();
 const fieldKey=x=>JSON.stringify([x.dataset.ex,x.dataset.set,x.dataset.field]);
 
+ui.recapPrefs=recapPreferences(healthStorage);
+let recapDay=kyivDay(Date.now()),recapSyncGeneration=0,pendingRecapId=null;
+
+function syncRecapPush(){
+  if(!state||!pushNotifications.device||!pushNotifications.recapSupported||failed||stale)return;
+  const generation=++recapSyncGeneration,enabled=ui.recapPrefs.push;
+  const periods=recapDeadlines(state.history,enabled);
+  const status=message=>{
+    if(generation!==recapSyncGeneration)return;
+    ui.recapPushStatus=message;
+    const node=document.getElementById('recap-push-status');
+    if(node)node.textContent=message;
+  };
+  if(!enabled&&!pushNotifications.recapKey&&!ui.recapPrefs.pushUsed)return;
+  void pushNotifications.syncRecaps(periods).then(ok=>{
+    if(ok)status(enabled?(periods.some(p=>p.id)?'Фонові сигнали заплановано.':'Фоновий сигнал буде заплановано після запису тренування.'):'Фонові сигнали RECAP вимкнено.');
+  }).catch(()=>status('Сервер не підтвердив розклад RECAP. Перевір оновлення сервера й інтернет. Повідомлення всередині СЕТ доступні окремо.'));
+}
+
+function openRecap(id){
+  if(!state||document.querySelector('.recap-dialog[open]')||modal.open){pendingRecapId=id;return;}
+  const report=reportFromId(state,id);
+  if(!report)return;
+  if(ui.recapPrefs.enabled&&!ui.recapPrefs.seen.includes(id)){
+    ui.recapPrefs=saveRecapPreferences(healthStorage,{seen:[...ui.recapPrefs.seen,id]});
+    if(ui.tab==='home'||ui.tab==='progress')render();
+  }
+  showRecap(report);
+}
+
+function refreshRecapCalendar(){
+  if(!state)return;
+  const today=kyivDay(Date.now());
+  if(today!==recapDay){
+    recapDay=today;syncRecapPush();
+    if(!modal.open&&(ui.tab==='home'||ui.tab==='progress'))render();
+  }
+  if(pendingRecapId&&!modal.open&&!document.querySelector('.recap-dialog[open]')){
+    const id=pendingRecapId;pendingRecapId=null;openRecap(id);
+  }
+}
+
 function updatePushStatus(info){
-  Object.assign(ui,{pushStatus:info.message,pushConnected:info.connected,pushReady:info.ready,pushURL:info.url});
+  const recapToggle=document.getElementById('recap-push');
+  if(recapToggle)recapToggle.disabled=!(info.connected&&info.recapSupported);
+  const recapStatus=document.getElementById('recap-push-status');
+  if(recapStatus&&(!info.connected||!info.recapSupported))recapStatus.textContent=info.connected?
+   'Потрібне оновлення сервера сповіщень для RECAP.':'Спочатку підключи фонові сповіщення СЕТ.';
+  Object.assign(ui,{pushStatus:info.message,pushConnected:info.connected,pushReady:info.ready,recapSupported:info.recapSupported,pushURL:info.url});
   const pushSummary=document.getElementById('notificationSummaryStatus');if(pushSummary)pushSummary.textContent=classifyPushState(ui).badge;
   for(const id of ['notificationStatus','restNotificationStatus']){
     const el=document.getElementById(id);
@@ -59,7 +109,9 @@ function updatePushStatus(info){
   }
 }
 const pushNotifications=new PushNotifications({onStatus:updatePushStatus});
-function syncPush(){if(state&&!failed&&!stale)void pushNotifications.sync(state);}
+function syncPush(){
+ if(state&&!failed&&!stale){void pushNotifications.sync(state);syncRecapPush();}
+}
 let undoRecord=null,undoHandle,orderCleanup=null;
 function clearUndo(){undoRecord=null;clearTimeout(undoHandle);undoBar.hidden=true;}
 function offerUndo(before,label,tab,focusId,sessionOnly=false){
@@ -323,6 +375,12 @@ function showSetFieldError(exId,setId,setObj){
 
 async function handleAction(b){
   const action=b.dataset.action,id=b.dataset.id;unlockSound();
+  if(action==='recap-filter'){
+    if(!['week','month','all','archive'].includes(id))return;
+    ui.recapMode=id;ui.progressTab='recap';ui.tab='progress';
+    render();app.querySelector('[data-action="recap-filter"][aria-pressed="true"]')?.focus();return;
+  }
+  if(action==='recap-open'){await queue;openRecap(id);return;}
   if(modalMode==='workout-menu'&&!['close-modal','workout-menu-tab'].includes(action))closeModal(true);
   if(action==='workout-menu'){await queue;const e=id?sessionExercise(state,id):null;openModal(workoutMenuForm(state,e),'workout-menu');return;}
   if(action==='workout-menu-tab'){const e=id?sessionExercise(state,id):null;openModal(workoutMenuForm(state,e,b.dataset.menuTab),'workout-menu');return;}
@@ -577,6 +635,12 @@ app.addEventListener('change',event=>{
   if(x.matches('[data-rir]')){const value=x.value;commit(s=>{sessionSet(s,x.dataset.ex,x.dataset.set).rir=value===''?null:Number(value);},{cardOnly:true,sessionOnly:true}).catch(()=>{});}
   if(x.id==='warmup-rest-duration')commit(s=>{s.warmupRestSeconds=Number(x.value);},{redraw:false,sessionOnly:true}).catch(()=>{});
   if(x.id==='keep-awake')commit(s=>{s.keepAwake=x.checked;},{redraw:false,sessionOnly:true}).then(syncWakeLock).catch(()=>{});
+  if(x.id==='recap-trend'){ui.recapTrend=Number(x.value);render();document.getElementById('recap-trend')?.focus();}
+  if(x.id==='recap-inapp'||x.id==='recap-push'){
+   const update=x.id==='recap-inapp'?{enabled:x.checked}:{push:x.checked,pushUsed:true};
+   ui.recapPrefs=saveRecapPreferences(healthStorage,update);
+   render();document.getElementById(x.id)?.focus();syncRecapPush();
+  }
   if(x.id==='progress-ex'){ui.exerciseId=x.value;render();}
   if(x.id==='progress-period'){ui.progressDays=Number(x.value);render();}
   if(x.id==='history-period'){ui.historyDays=Number(x.value);ui.historyDate=null;ui.historyLimit=50;render();}
@@ -707,8 +771,9 @@ function updateTimer(){
   }
 }
 setInterval(()=>{if(!document.hidden)updateTimer();},1000);
-document.addEventListener('visibilitychange',()=>{syncWakeLock();if(!document.hidden){updateTimer();syncPush();}});
-window.addEventListener('pageshow',()=>{updateTimer();syncWakeLock();syncPush();});
+setInterval(()=>{if(!document.hidden)refreshRecapCalendar();},15000);
+document.addEventListener('visibilitychange',()=>{syncWakeLock();if(!document.hidden){updateTimer();syncPush();refreshRecapCalendar();}});
+window.addEventListener('pageshow',()=>{updateTimer();syncWakeLock();syncPush();refreshRecapCalendar();});
 window.addEventListener('pagehide',()=>{wakeLock.sync(false).catch(()=>{});});
 window.addEventListener('beforeunload',event=>{if(pending||failed){event.preventDefault();event.returnValue='';}});
 
@@ -798,7 +863,17 @@ async function boot(){
     };
   }
 }
+navigator.serviceWorker?.addEventListener('message',event=>{
+ if(event.data?.type==='OPEN_RECAP'&&typeof event.data.id==='string')openRecap(event.data.id);
+});
 await boot();
+const initialRecapURL=new URL(location.href);
+if(initialRecapURL.searchParams.has('recap')){
+ const id=initialRecapURL.searchParams.get('recap');
+ initialRecapURL.searchParams.delete('recap');
+ window.history.replaceState(null,'',initialRecapURL);
+ openRecap(id);
+}
 if(state)void pushNotifications.init().then(syncPush);
 window.addEventListener('online',syncPush);
 setupPWA({canUpdate:()=>!pending&&!failed&&!state?.session,onStatus:status=>{ui.offlineStatus=status;const target=document.getElementById('offlineStatus');if(target)target.textContent=status;},onUpdate:apply=>{const banner=document.getElementById('updateBanner');banner.hidden=false;document.getElementById('applyUpdate').onclick=async()=>{await queue;if(state?.session)return toast('Оновлення можна встановити після завершення тренування');if(failed)return toast('Спочатку збережи незбережені дані');apply();};}}).catch(error=>{ui.offlineStatus=`Офлайн не підготовлено: ${error.message}`;const target=document.getElementById('offlineStatus');if(target)target.textContent=ui.offlineStatus;});

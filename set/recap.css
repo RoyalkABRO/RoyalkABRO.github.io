@@ -1,0 +1,124 @@
+.recap-hub,.recap-inbox,.recap-archive,.recap-list{display:grid;gap:12px}
+.recap-hub{margin:12px 0 24px}
+.recap-hub>header{padding:18px;border:1px solid var(--line2);border-radius:16px;background:radial-gradient(ellipse at top right,#c8f54228,transparent 62%),var(--surface)}
+.recap-hub h2,.recap-hub h3,.recap-inbox p{margin:0}
+.recap-inbox .card,.recap-archive article{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.recap-inbox .card p{flex:1 1 12rem}
+.recap-archive small{display:block;color:var(--muted)}
+.recap-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+.recap-filters button{min-width:0;padding-inline:3px;line-height:1.15}
+.recap-filters button[aria-pressed=true]{background:var(--lime);color:#252d10}
+.recap-brand{color:var(--lime);font-weight:800;letter-spacing:.16em;font-size:.75rem;margin:0 0 6px}
+.recap-open{overflow:hidden}
+dialog.recap-dialog{
+ --recap-bg:#151713;--recap-ink:#f7f8ed;--recap-muted:#c4c8b9;--recap-card:#252922;
+ --recap-lime:#c8f542;--recap-good:#c8f542;--recap-steady:#ffd17e;--recap-down:#ff9e91;--recap-idle:#d0befa;
+ position:fixed;inset:0;margin:0;width:100%;max-width:none;height:100%;height:100dvh;max-height:none;
+ padding:0;border:0;border-radius:0;background:var(--recap-bg);color:var(--recap-ink);overflow:hidden;
+}
+@media(prefers-color-scheme:light){
+ dialog.recap-dialog{--recap-bg:#f3f5e9;--recap-ink:#202817;--recap-muted:#475141;--recap-card:#e5ebd9;
+  --recap-good:#3d6600;--recap-steady:#855a06;--recap-down:#a72b31;--recap-idle:#5f4699}
+}
+.recap-dialog::backdrop{background:#111}
+.recap-shell{
+ box-sizing:border-box;height:100%;max-width:720px;margin:auto;display:grid;grid-template-rows:auto minmax(0,1fr) auto;
+ padding:calc(10px + env(safe-area-inset-top)) max(14px,env(safe-area-inset-right))
+  calc(12px + env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left));
+}
+.recap-top,.recap-footer{z-index:1}
+.recap-topline,.recap-footer,.recap-share{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.recap-topline span,.recap-footer span{font-size:.77rem;color:var(--recap-muted)}
+.recap-topline .icon-btn{font-size:1.65rem;color:var(--recap-ink)}
+.recap-segments{display:flex;gap:3px}
+.recap-segments i{height:4px;flex:1;background:var(--recap-card);border-radius:8px}
+.recap-segments .is-read{background:var(--recap-good)}
+.recap-footer{border-top:1px solid color-mix(in srgb,var(--recap-muted) 25%,transparent);padding-top:8px}
+.recap-footer .btn{min-width:75px}
+.recap-footer .text-btn{color:var(--recap-ink);text-align:center}
+.recap-slide{overflow-y:auto;overscroll-behavior:contain;padding:12px 2px 24px;overflow-wrap:anywhere;animation:recap-enter .34s ease-out both}
+.recap-slide h2{font-size:clamp(1.75rem,8vw,3.6rem);letter-spacing:-.045em;line-height:1.06;margin:.3rem 0 1rem;color:inherit}
+.recap-slide h2:focus,.recap-slide:focus{outline:none}
+.recap-hero{text-align:center;align-content:center}
+.recap-stage{position:relative;isolation:isolate;width:min(260px,65vw,34dvh);aspect-ratio:1;margin:12px auto 26px;--paint:#c8f542;--edge:#6c8b22}
+.recap-stage[data-motion=stable]{--paint:#ffd17e;--edge:#9f652a}
+.recap-stage[data-motion=down]{--paint:#ff9e91;--edge:#ac4749}
+.recap-stage[data-motion=insufficient]{--paint:#d0befa;--edge:#7767a2}
+.recap-radar{position:absolute;inset:-12%;border-radius:50%;background:repeating-radial-gradient(circle,transparent 0 19%,color-mix(in srgb,var(--paint) 19%,transparent) 19.5% 20%,transparent 20.5% 24%);mask-image:radial-gradient(#000 24%,transparent 69%)}
+.recap-arrow{position:absolute;inset:0;width:100%;height:100%;overflow:visible;transform-origin:50% 78%;filter:drop-shadow(0 8px 8px #13170e30)}
+.recap-arrow-body{fill:var(--paint);stroke:var(--edge);stroke-width:2;stroke-linejoin:round}
+.recap-arrow-depth{fill:var(--edge);stroke:var(--edge);stroke-width:3;stroke-linejoin:round}
+.recap-face{fill:#263019;stroke:#263019;stroke-linecap:round}
+.recap-arm{fill:none;stroke:var(--edge);stroke-width:5;stroke-linecap:round;transform-origin:50% 56%}
+.recap-shadow{position:absolute;inset:auto 26% 10% 26%;height:7%;border-radius:50%;background:#21251a55;filter:blur(4px)}
+.recap-trail{position:absolute;top:28%;bottom:17%;left:43%;width:14%;background:linear-gradient(var(--paint),transparent);border-radius:90%;opacity:0;filter:blur(7px)}
+.recap-spark{position:absolute;top:50%;left:50%;width:8px;height:14px;border-radius:3px;opacity:0;background:var(--paint)}
+.recap-spark:nth-child(3n){background:#ffcf76}
+.recap-spark:nth-child(3n + 1){background:#f8f4da;border-radius:50%;width:6px;height:6px}
+[data-motion=intro] .recap-arrow{animation:recap-ready 1.8s ease-in-out 2}
+[data-motion=up] .recap-arrow{animation:recap-up 1.42s both}
+[data-motion=up] .recap-trail{animation:recap-trail 1.42s both}
+[data-motion=up] .recap-spark{animation:recap-confetti .8s calc(.43s + var(--spark)*45ms) both}
+[data-motion=stable] .recap-arrow{animation:recap-steady 1.24s both}
+[data-motion=stable] .recap-arm{animation:recap-shrug 1.24s both}
+[data-motion=down] .recap-arrow{animation:recap-down 1.66s both}
+[data-motion=down] .recap-arrow-body{animation:recap-blush 1.66s both}
+[data-motion=insufficient] .recap-arrow{animation:recap-scan 1.3s both}
+[data-motion=insufficient] .recap-radar{animation:recap-sweep 1.3s both}
+.recap-reveal-number,.recap-best{font-weight:850;font-size:clamp(1.25rem,6vw,2.8rem);line-height:1.12;margin:12px 0}
+.recap-reveal-number small{display:block;margin-top:5px;font-size:.8rem;font-weight:550}
+.recap-note,.recap-list small,.recap-records small,.recap-awards small{display:block;color:var(--recap-muted,var(--muted));font-size:.9rem;margin:6px 0 10px}
+.recap-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(125px,100%),1fr));gap:8px;margin:0 0 12px}
+.recap-metrics div,.recap-list article,.recap-records li,.recap-awards article{padding:11px;border-radius:12px;background:var(--recap-card,var(--surface2));min-width:0}
+.recap-metrics dt{font-size:.76rem;color:var(--recap-muted,var(--muted))}
+.recap-metrics dd{margin:1px 0 0;font-weight:800;font-size:1.2rem}
+.recap-list article,.recap-records li,.recap-awards article{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.recap-list article>b,.recap-records b{color:var(--recap-good,var(--lime));white-space:nowrap}
+.recap-list article[data-direction=down]>b{color:var(--recap-down,#ff9e91)}
+.recap-list article[data-direction=stable]>b{color:var(--recap-steady,#ffcf76)}
+.recap-sparkline{display:block;width:100%;max-height:120px;margin:4px 0;color:var(--recap-good,var(--lime))}
+.recap-sparkline polyline{fill:none;stroke:currentColor;stroke-width:2.4;stroke-linejoin:round}
+.recap-sparkline circle{fill:currentColor}
+.recap-sparkline .recap-separator{stroke:currentColor;stroke-width:1;stroke-dasharray:2 2;opacity:.5}
+.recap-records,.recap-awards{display:grid;gap:6px;padding:0;margin:0 0 12px;list-style:none}
+.recap-records li,.recap-awards article{justify-content:flex-start;animation:recap-badge .45s var(--delay,0ms) both}
+.recap-records li>b{margin-inline-start:auto}
+.recap-records li>span,.recap-awards article>span{color:var(--recap-steady,#ffcf76);font-size:1.4rem}
+.recap-method{margin-top:16px}
+.recap-method summary,.recap-hub details summary{cursor:pointer;min-height:44px;align-content:center}
+.recap-method p{color:var(--recap-muted,var(--muted))}
+.recap-week-values{display:grid;grid-template-columns:repeat(auto-fit,minmax(42px,1fr));width:100%;gap:4px}
+.recap-week-values span{padding:4px;text-align:center}
+.recap-week-values small{margin:0}
+.recap-body-map{border-radius:12px;background:var(--recap-card);padding:12px}
+.recap-body-map .body-base{fill:color-mix(in srgb,var(--recap-muted) 28%,var(--recap-card));stroke:var(--recap-muted);stroke-width:1}
+.recap-body-map .muscle-region path{fill:var(--recap-good)}
+.recap-body-map .helper,.recap-body-map figcaption{color:var(--recap-muted)}
+.recap-muscle-list{margin:10px 0}
+.recap-muscle-list div{display:flex;justify-content:space-between;gap:12px}
+.recap-share{justify-content:flex-start;flex-wrap:wrap}
+.recap-dialog [hidden]{display:none!important}
+.recap-settings{margin-block:12px}
+@keyframes recap-enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes recap-ready{0%,100%{transform:none}50%{transform:translateY(-6%) scaleY(1.03)}}
+@keyframes recap-up{
+ 0%{transform:none}15%{transform:translate(-2%,5%) rotate(-4deg) scale(1.12,.82)}
+ 23%{transform:translate(2%,6%) rotate(4deg) scale(1.21,.75)}
+ 32%{transform:translateY(-20%) scale(.83,1.23)}
+ 47%{transform:translateY(-29%) rotate(-7deg) scale(1.03,.97)}
+ 60%{transform:translateY(-11%) rotate(3deg)}
+ 74%{transform:translateY(3%) scale(1.16,.84)}
+ 87%{transform:translateY(-7%) scale(.96,1.06)}100%{transform:none}
+}
+@keyframes recap-trail{0%,25%,100%{opacity:0;transform:scaleY(.3)}42%{opacity:.7;transform:translateY(-24%) scaleY(1.4)}}
+@keyframes recap-confetti{12%{opacity:1}70%{opacity:1}100%{transform:rotate(var(--angle)) translateY(-95px) rotate(120deg);opacity:0}}
+@keyframes recap-steady{0%,100%{transform:none}21%{transform:scale(1.13,.86)}44%{transform:translateY(-13%) scale(.94,1.08)}65%{transform:translateY(-8%) rotate(-6deg)}82%{transform:translateY(1%) scale(1.07,.93)}}
+@keyframes recap-shrug{0%,60%,100%{transform:none}72%{transform:translateY(-8px)}}
+@keyframes recap-down{0%,100%{transform:none}17%{transform:scale(1.21,.75)}33%{transform:translateY(-19%) scale(.85,1.19) rotate(-10deg)}47%{transform:translate(9%,-10%) rotate(40deg)}64%{transform:translate(9%,10%) rotate(77deg) scale(1.13,.74)}77%{transform:translate(5%,2%) rotate(40deg)}91%{transform:rotate(-9deg) scale(.97,1.04)}}
+@keyframes recap-blush{0%,34%{fill:#c8f542}62%,100%{fill:var(--paint)}}
+@keyframes recap-scan{0%,100%{transform:none}26%{transform:rotate(-12deg) scale(.97,1.04)}58%{transform:rotate(12deg) translateY(-3%)}}
+@keyframes recap-sweep{0%{opacity:.12;transform:scale(.55)}65%{opacity:1}100%{transform:scale(1.13)}}
+@keyframes recap-badge{0%{opacity:0;transform:scale(.88) translateY(5px)}67%{opacity:1;transform:scale(1.025)}100%{transform:none}}
+@media(prefers-reduced-motion:reduce){.recap-dialog *,.recap-dialog *::before,.recap-dialog *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+.recap-week-values span{display:grid;grid-template-rows:56px auto auto;justify-items:center;align-items:end}
+.recap-week-values i{display:block;width:min(64%,24px);height:var(--height);background:var(--recap-good);border-radius:5px 5px 1px 1px}

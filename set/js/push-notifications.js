@@ -4,18 +4,39 @@ export function pushServerURL(value){const u=new URL(value);if(u.protocol!=='htt
 export function pushCapability(nav,win){if(!win?.isSecureContext||!nav?.serviceWorker||!win.PushManager||!win.Notification)return 'Цей браузер не підтримує фонові сповіщення.';const ios=/iPhone|iPad|iPod/.test(nav.userAgent||'')||(nav.platform==='MacIntel'&&nav.maxTouchPoints>1);if(ios&&!nav.standalone&&!win.matchMedia?.('(display-mode: standalone)').matches)return 'На iPhone відкрий СЕТ із піктограми на початковому екрані.';if(win.Notification.permission==='denied')return 'Сповіщення вимкнені в налаштуваннях браузера або iPhone.';return '';}
 export class PushNotifications{
  constructor({nav=globalThis.navigator,win=globalThis.window,storage,fetcher=globalThis.fetch?.bind(globalThis),onStatus=()=>{},defaultURL=PUSH_SERVER_URL}={}){this.nav=nav;this.win=win;try{this.storage=storage??win?.localStorage;}catch{}this.fetcher=fetcher;this.onStatus=onStatus;this.defaultURL=defaultURL;this.device=null;this.registration=null;this.publicKey=null;this.url='';this.key=null;this.confirmedEnd=null;this.message='Фонові сповіщення ще не підключені.';try{const d=JSON.parse(this.storage?.getItem(STORAGE_KEY)||'null');if(d&&typeof d.token==='string'&&d.token.length>=32&&Number.isSafeInteger(d.sequence)&&d.sequence>=0){d.url=pushServerURL(d.url);this.device=d;this.url=d.url;}}catch{} }
- status(message){this.message=message;this.onStatus({message,connected:Boolean(this.device),ready:Boolean(this.registration&&this.publicKey),url:this.url});}
+ status(message){this.message=message;this.onStatus({message,connected:Boolean(this.device),ready:Boolean(this.registration&&this.publicKey),recapSupported:this.recapSupported===true,url:this.url});}
  save(){if(!this.storage)throw Error('Не вдалося зберегти підключення на цьому пристрої.');if(this.device)this.storage.setItem(STORAGE_KEY,JSON.stringify(this.device));else this.storage.removeItem(STORAGE_KEY);}
  async request(path,body,token=this.device?.token,method='POST'){const response=await this.fetcher(this.url+path,{method,mode:'cors',cache:'no-store',headers:{...(method==='GET'?{}:{'Content-Type':'application/json'}),...(token?{Authorization:'Bearer '+token}:{})},...(method==='GET'||method==='DELETE'?{}:{body:JSON.stringify(body||{})}),keepalive:method!=='GET',signal:AbortSignal.timeout(8000)});let data;try{data=await response.json();}catch{throw Error('Сервер повернув некоректну відповідь.');}if(!response.ok)throw Error(data.error||'Сервер сповіщень недоступний.');return data;}
  async init(){const limitation=pushCapability(this.nav,this.win);if(limitation){this.status(limitation);return;}const url=this.url||this.defaultURL;if(!url){this.status('Потрібне одноразове підключення сервера сповіщень.');return;}try{await this.prepare(url);}catch(e){this.status(e.message);}}
- async prepare(url){const normalized=pushServerURL(url);if(this.device&&this.device.url!==normalized)throw Error('Спочатку вимкни попереднє підключення.');const limitation=pushCapability(this.nav,this.win);if(limitation)throw Error(limitation);this.url=normalized;this.registration=await this.nav.serviceWorker.ready;const data=await this.request('/v1/config',null,null,'GET');if(typeof data.publicKey!=='string'||data.publicKey.length<80)throw Error('Сервер не надав ключ сповіщень.');this.publicKey=data.publicKey;this.status(this.device?'Сповіщення підключені.':'Сервер готовий. Дозволь сповіщення на цьому пристрої.');}
+ async prepare(url){const normalized=pushServerURL(url);if(this.device&&this.device.url!==normalized)throw Error('Спочатку вимкни попереднє підключення.');const limitation=pushCapability(this.nav,this.win);if(limitation)throw Error(limitation);this.url=normalized;this.registration=await this.nav.serviceWorker.ready;const data=await this.request('/v1/config',null,null,'GET');if(typeof data.publicKey!=='string'||data.publicKey.length<80)throw Error('Сервер не надав ключ сповіщень.');this.publicKey=data.publicKey;this.recapSupported=data.recapScheduling===true;this.status(this.device?'Сповіщення підключені.':'Сервер готовий. Дозволь сповіщення на цьому пристрої.');}
  async enable(pairingCode){if(this.device)return;if(typeof pairingCode!=='string'||pairingCode.trim().length<16)throw Error('Введи код підключення з Cloudflare (від 16 символів).');if(!this.registration||!this.publicKey)throw Error('Спочатку підключи сервер.');const limitation=pushCapability(this.nav,this.win);if(limitation)throw Error(limitation);
   // subscribe is invoked directly by the button gesture, before any await.
   const subscriptionPromise=this.registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:this.publicKey});const subscription=await subscriptionPromise;
   const result=await this.request('/v1/enroll',{subscription:subscription.toJSON(),pairingCode},null);if(typeof result.token!=='string'||typeof result.id!=='string')throw Error('Не вдалося зареєструвати пристрій.');this.device={url:this.url,token:result.token,id:result.id,sequence:0};try{this.save();}catch(e){await this.request('/v1/device',null,result.token,'DELETE').catch(()=>{});this.device=null;throw e;}this.key=null;this.status('Сповіщення підключені.');}
  async sync(state,{force=false}={}){if(!this.device)return;const endsAt=state?.session&&state.restEndsAt>Date.now()?state.restEndsAt:null,kind=state?.restKind||'set',key=String(endsAt)+':'+kind;if(!force&&this.key===key)return;this.key=key;this.confirmedEnd=null;this.device.sequence=Math.max(this.device.sequence+1,Date.now()*1000+Math.floor(Math.random()*1000));const sequence=this.device.sequence;try{this.save();this.status(endsAt?'Плануємо фоновий сигнал…':'Скасовуємо фоновий сигнал…');const result=await this.request('/v1/timer',{sequence,endsAt,kind});if(this.device?.sequence!==sequence)return;if(!result.accepted||result.sequence!==sequence)throw Error('Таймер змінився в іншому вікні.');this.confirmedEnd=endsAt;this.status(endsAt?'Фоновий сигнал заплановано.':'Сповіщення підключені.');}catch(e){if(this.device?.sequence!==sequence)return;this.key=null;this.status('Фоновий сигнал не підтверджено. Залиш СЕТ відкритим.');}}
+ async syncRecaps(periods){
+  if(!this.device)return false;
+  const key=JSON.stringify(periods);
+  if(this.pendingRecap?.key===key)return this.pendingRecap.promise;
+  if(!this.pendingRecap&&this.recapKey===key)return true;
+  if(this.recapRetry?.key===key&&Date.now()<this.recapRetry.after)throw Error('Повторимо синхронізацію RECAP пізніше.');
+  const device=this.device;
+  const sequence=device.recapSequence=Math.max((Number.isSafeInteger(device.recapSequence)?device.recapSequence:0)+1,
+   Date.now()*1000+Math.floor(Math.random()*1000));
+  this.save();
+  const promise=this.request('/v1/recap',{sequence,periods}).then(result=>{
+   if(this.device!==device||this.pendingRecap?.promise!==promise)return false;
+   if(!result.accepted||result.sequence!==sequence)throw Error('Розклад RECAP змінився.');
+   this.recapKey=key;this.recapRetry=null;return true;
+  }).catch(error=>{
+   if(this.pendingRecap?.promise===promise)this.recapRetry={key,after:Date.now()+15000};
+   throw error;
+  }).finally(()=>{if(this.pendingRecap?.promise===promise)this.pendingRecap=null;});
+  this.pendingRecap={key,promise};
+  return promise;
+ }
  async test(){if(!this.device)throw Error('Спочатку увімкни сповіщення.');await this.request('/v1/test',{});this.status('Тест надіслано. Перевір сповіщення iPhone.');}
- async disable(){if(!this.device)return;await this.request('/v1/device',null,undefined,'DELETE');this.device=null;this.key=null;this.confirmedEnd=null;this.save();try{const sub=await this.registration?.pushManager.getSubscription();if(sub)await sub.unsubscribe();const notifications=await this.registration?.getNotifications({tag:'set-rest'});notifications?.forEach(n=>n.close());}catch{}this.status('Фонові сповіщення вимкнені.');}
+ async disable(){if(!this.device)return;await this.request('/v1/device',null,undefined,'DELETE');this.device=null;this.key=null;this.recapKey=null;this.confirmedEnd=null;this.save();try{const sub=await this.registration?.pushManager.getSubscription();if(sub)await sub.unsubscribe();const notifications=await this.registration?.getNotifications({tag:'set-rest'});notifications?.forEach(n=>n.close());}catch{}this.status('Фонові сповіщення вимкнені.');}
 }
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function classifyPushState(ui){

@@ -30,7 +30,7 @@ function trainingConfig(e){
     out.muscleGroup=e.muscleGroup;
   }
   if(e.equipment!==undefined){
-    if(!object(e.equipment)||Object.keys(e.equipment).some(k=>!['seat','bench','pin','grip'].includes(k))||
+    if(!object(e.equipment)||Object.keys(e.equipment).some(k=>!['seat','bench','pin','grip','station'].includes(k))||
       Object.values(e.equipment).some(v=>typeof v!=='string'||v.length>80))fail('Некоректні налаштування обладнання');
     out.equipment=Object.fromEntries(Object.entries(e.equipment).map(([k,v])=>[k,v.trim()]));
   }

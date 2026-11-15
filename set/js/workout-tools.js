@@ -3,7 +3,7 @@ import {exerciseConfig} from './exercise-config.js';
 import {restOwner} from './timer.js';
 import {getOrCreateExercise,createSessionExercise,uid} from './model.js';
 import {newestFirst} from './history-index.js';
-export const EQUIPMENT_FIELDS=[['seat','Сидіння'],['bench','Нахил лавки'],['pin','Положення блока'],['grip','Хват / руків’я']];
+export const EQUIPMENT_FIELDS=[['seat','Сидіння'],['bench','Нахил лавки'],['pin','Положення блока'],['grip','Хват / руків’я'],['station','Тренажер / стійка']];
 export function equipmentText(e){
  const fields=EQUIPMENT_FIELDS.filter(([key])=>e.equipment?.[key]).map(([key,label])=>label+': '+e.equipment[key]);
  if(e.training?.equipmentType==='pullup'&&e.training.band)fields.unshift('Резинка: '+e.training.band);
